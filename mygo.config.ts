@@ -22,8 +22,8 @@ if (clientOnly) {
   infoPlist.CageClientOnly = true;
 }
 
-const name = clientOnly ? "Cage Client" : macosTrial ? "Cage macOS" : "Cage";
-const slug = clientOnly ? "cage-client" : macosTrial ? "cage-macos" : "cage";
+const name = clientOnly ? "Airlock Client" : macosTrial ? "Airlock macOS" : "Airlock";
+const slug = clientOnly ? "airlock-client" : macosTrial ? "airlock-macos" : "airlock";
 const identifier = clientOnly
   ? "io.github.lee-xeo.claude-cage-client"
   : macosTrial

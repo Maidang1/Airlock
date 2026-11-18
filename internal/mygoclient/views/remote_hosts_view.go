@@ -101,7 +101,7 @@ func (r *RootView) renderRemoteHostsView(c *ui.Context, pal Palette, snap core.S
 					ui.Text(c, "已保存的 Cloud SSH 主机").FontSize(14).Bold().TextColor(pal.Text)
 					ui.Row(c).Gap(8).Wrap().AlignItems(ui.Center).Children(func() {
 						ui.TextInput(c, &st.passphrase).Password().Placeholder("可选 SSH 私钥口令").Width(200)
-						ui.Checkbox(c, &st.deploy, "自动部署 / 更新远端 Cage Server")
+						ui.Checkbox(c, &st.deploy, "自动部署 / 更新远端 Airlock Server")
 					})
 
 					if len(snap.Hosts) == 0 {

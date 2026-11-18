@@ -117,7 +117,7 @@ func (r *RootView) renderOnboarding(c *ui.Context, pal Palette, snap core.Snapsh
 		ui.Column(c).Gap(12).FillWidth().Children(func() {
 			TitleBarClearance(c)
 			ui.Row(c).FillWidth().Justify(ui.SpaceBetween).AlignItems(ui.Center).Children(func() {
-				SectionHeading(c, pal, "初始化 Cage 隔离工作环境", "按向导完成客机部署、网络代理与安全验证后即可使用")
+				SectionHeading(c, pal, "初始化 Airlock 隔离工作环境", "按向导完成客机部署、网络代理与安全验证后即可使用")
 				ui.Row(c).Gap(8).Children(func() {
 					if ui.Button(c, "刷新状态").Clicked() {
 						go r.refreshOnboardingOptions()

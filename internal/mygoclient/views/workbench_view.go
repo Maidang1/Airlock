@@ -512,7 +512,7 @@ func (r *RootView) renderProjectHome(c *ui.Context, pal Palette, snap core.Snaps
 	if snap.Status.GuestSystem != "" {
 		guestLabel = snap.Status.GuestSystem
 	}
-	connName := "本机 Cage"
+	connName := "本机 Airlock"
 	if snap.Context.Mode == "remote" {
 		if snap.Context.Name != "" {
 			connName = snap.Context.Name
@@ -554,7 +554,7 @@ func (r *RootView) renderProjectHome(c *ui.Context, pal Palette, snap core.Snaps
 		ui.Column(c).FillWidth().Gap(14).Children(func() {
 			// 1. Page description & status summary bar (Magpie top header style)
 			ui.Column(c).FillWidth().Gap(8).Children(func() {
-				ui.Text(c, "在安全隔离的 Cage 客机沙盒中运行 Claude Code、命令行终端与独立指纹浏览器；宿主机未授权目录对客机完全不可见。").
+				ui.Text(c, "在安全隔离的 Airlock 客机沙盒中运行 Claude Code、命令行终端与独立指纹浏览器；宿主机未授权目录对客机完全不可见。").
 					FontSize(12).
 					TextColor(pal.Muted)
 

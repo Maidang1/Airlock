@@ -93,7 +93,7 @@ func (r *RootView) renderAccountGate(c *ui.Context, pal Palette, snap core.Snaps
 						r.PushToast("恢复密钥已复制到剪贴板")
 					}
 					ui.Checkbox(c, &st.recoveryConfirmed, "我已安全保存该恢复密钥")
-					if ui.PrimaryButton(c, "继续进入 Cage").Disabled(!st.recoveryConfirmed).Clicked() {
+					if ui.PrimaryButton(c, "继续进入 Airlock").Disabled(!st.recoveryConfirmed).Clicked() {
 						st.mu.Lock()
 						st.pendingRecoveryKey = ""
 						st.recoveryConfirmed = false
@@ -105,7 +105,7 @@ func (r *RootView) renderAccountGate(c *ui.Context, pal Palette, snap core.Snaps
 				}
 
 				if !acct.Exists {
-					SectionHeading(c, pal, "创建本机 Cage 安全账户", "用于保护客机登录凭证、密码保险箱及多设备配对权限")
+					SectionHeading(c, pal, "创建本机 Airlock 安全账户", "用于保护客机登录凭证、密码保险箱及多设备配对权限")
 					ErrorBanner(c, pal, errMsg)
 					ui.Column(c).Gap(8).Children(func() {
 						ui.Text(c, "用户名").FontSize(12).TextColor(pal.Muted)
@@ -163,9 +163,9 @@ func (r *RootView) renderAccountGate(c *ui.Context, pal Palette, snap core.Snaps
 				// Locked / Unlock view
 				name := acct.Username
 				if name == "" {
-					name = "Cage 用户"
+					name = "Airlock 用户"
 				}
-				SectionHeading(c, pal, "解锁 Cage · "+name, "验证身份后访问环境、保险箱与终端会话")
+				SectionHeading(c, pal, "解锁 Airlock · "+name, "验证身份后访问环境、保险箱与终端会话")
 				if acct.BackgroundRunning {
 					InfoBanner(c, pal, "后台虚拟机与定时任务正在运行中")
 				}
@@ -205,7 +205,7 @@ func (r *RootView) renderAccountGate(c *ui.Context, pal Palette, snap core.Snaps
 					}
 					if acct.Devices["biometric"] != "" && macnative.BiometricAvailable() {
 						if ui.Button(c, "使用 Touch ID 解锁").Disabled(busy).Clicked() {
-							go r.unlockWithDevice(acct.DeviceBinding, "biometric", "使用 Touch ID 解锁 Cage")
+							go r.unlockWithDevice(acct.DeviceBinding, "biometric", "使用 Touch ID 解锁 Airlock")
 						}
 					}
 					if acct.Devices["automatic"] != "" {
@@ -250,9 +250,9 @@ func (r *RootView) renderMacOSCredentialsGate(c *ui.Context, pal Palette, snap c
 	notice := st.notice
 	st.mu.Unlock()
 
-	subtitle := "输入当前 Cage 密码，确认用于 macOS 客机（小写字母开头的用户名，8–256 位英文字符密码）"
+	subtitle := "输入当前 Airlock 密码，确认用于 macOS 客机（小写字母开头的用户名，8–256 位英文字符密码）"
 	if acct.TrustedLocal {
-		subtitle = "先设置 Cage 与 macOS 客机共用账密（小写字母开头的用户名，8–256 位英文字符密码），再继续安装"
+		subtitle = "先设置 Airlock 与 macOS 客机共用账密（小写字母开头的用户名，8–256 位英文字符密码），再继续安装"
 	}
 
 	ui.Column(c).Fill().Background(pal.Bg).Children(func() {

@@ -386,7 +386,7 @@ func TestAccountUnlockAndCreateFlowUI(t *testing.T) {
 	stCreate := &mockWorkbenchState{accountExists: false, unlocked: false, initRequired: false, proxySelected: "node-a"}
 	_, rv1, tester1 := newMockWorkbench(t, stCreate)
 	tester1.Frame()
-	if !tester1.HasText("创建本机 Cage 安全账户") {
+	if !tester1.HasText("创建本机 Airlock 安全账户") {
 		t.Fatalf("expected account create heading, got texts=%v", tester1.Texts())
 	}
 	if err := tester1.Click("用户名"); err != nil {
@@ -409,7 +409,7 @@ func TestAccountUnlockAndCreateFlowUI(t *testing.T) {
 	if err := tester1.Click("我已安全保存该恢复密钥"); err != nil {
 		t.Fatalf("check recovery confirmed failed: %v", err)
 	}
-	if err := tester1.Click("继续进入 Cage"); err != nil {
+	if err := tester1.Click("继续进入 Airlock"); err != nil {
 		t.Fatalf("click continue failed: %v", err)
 	}
 	waitTester(t, tester1, func() bool { return tester1.HasText("新建 Claude 终端") && tester1.HasText("新建 CLI") }, "workbench after create")
@@ -419,7 +419,7 @@ func TestAccountUnlockAndCreateFlowUI(t *testing.T) {
 	stUnlock := &mockWorkbenchState{accountExists: true, unlocked: false, initRequired: false, proxySelected: "node-a"}
 	_, _, tester2 := newMockWorkbench(t, stUnlock)
 	tester2.Frame()
-	if !tester2.HasText("解锁 Cage · alice") {
+	if !tester2.HasText("解锁 Airlock · alice") {
 		t.Fatalf("expected unlock screen, got texts=%v", tester2.Texts())
 	}
 	if err := tester2.Click("解锁密码"); err != nil {
@@ -436,7 +436,7 @@ func TestOnboardingCompletionFlowUI(t *testing.T) {
 	st := &mockWorkbenchState{accountExists: true, unlocked: true, initRequired: true, proxySelected: "node-a"}
 	_, _, tester := newMockWorkbench(t, st)
 	tester.Frame()
-	if !tester.HasText("初始化 Cage 隔离工作环境") {
+	if !tester.HasText("初始化 Airlock 隔离工作环境") {
 		t.Fatalf("expected onboarding screen, got %v", tester.Texts())
 	}
 	if !tester.HasText("Tokyo 01") || !tester.HasText("Singapore 02") || !tester.HasText("设为出口") {
@@ -487,7 +487,7 @@ func TestWorkbenchNavigationAndMutationsUI(t *testing.T) {
 
 	// Verify Settings sidebar -> 返回主页 returns to previous non-settings view (NavBrowser),
 	// and clicking the project row in the sidebar returns to Project Home.
-	if !tester.HasText("Cage 设置") || !tester.HasText("返回主页") {
+	if !tester.HasText("Airlock 设置") || !tester.HasText("返回主页") {
 		t.Fatalf("expected Settings sidebar with 返回主页, got %v", tester.Texts())
 	}
 	if err := tester.Click("返回主页"); err != nil {
@@ -523,7 +523,7 @@ func TestMacOSCredentialsGateAndTrustedLoginUI(t *testing.T) {
 	}
 	_, _, tester1 := newMockWorkbench(t, stLocked)
 	tester1.Frame()
-	if !tester1.HasText("解锁 Cage · alice") {
+	if !tester1.HasText("解锁 Airlock · alice") {
 		t.Fatalf("expected unlock heading on locked macOS host, got texts=%v", tester1.Texts())
 	}
 	if tester1.HasText("设置 macOS 客机共用账密") {
@@ -571,7 +571,7 @@ func TestMacOSCredentialsGateAndTrustedLoginUI(t *testing.T) {
 	if err := tester2.Click("保存并准备环境"); err != nil {
 		t.Fatalf("click prepare-macos: %v", err)
 	}
-	waitTester(t, tester2, func() bool { return tester2.HasText("初始化 Cage 隔离工作环境") }, "onboarding after prepare-macos")
+	waitTester(t, tester2, func() bool { return tester2.HasText("初始化 Airlock 隔离工作环境") }, "onboarding after prepare-macos")
 
 	// 3. Locked account with remembered trusted_login auto-resumes on local desktop gateway.
 	stResume := &mockWorkbenchState{
@@ -642,7 +642,7 @@ func TestPortConflictDetectionAndCustomPortFlowUI(t *testing.T) {
 		t.Fatalf("click port settings tab: %v", err)
 	}
 	waitTester(t, tester, func() bool {
-		return tester.HasText("端口配置与宿主机冲突检测") && tester.HasText("Cage 本机回环服务端口")
+		return tester.HasText("端口配置与宿主机冲突检测") && tester.HasText("Airlock 本机回环服务端口")
 	}, "settings port conflict tab content")
 }
 

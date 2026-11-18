@@ -101,10 +101,10 @@ func StoreAccountDevice(kind, binding, id, secret string) error {
 
 	cSvc := C.CString(accountDeviceService)
 	cAcct := C.CString(accountKeychainName(kind, binding))
-	label := "Cage 记住本机登录"
+	label := "Airlock 记住本机登录"
 	isBio := C.int(0)
 	if kind == "biometric" {
-		label = "Cage Touch ID 快捷解锁"
+		label = "Airlock Touch ID 快捷解锁"
 		isBio = 1
 	}
 	cLabel := C.CString(label)
@@ -138,7 +138,7 @@ func ReadAccountDevice(kind, binding, reason string) (string, string, error) {
 		return "", "", errors.New("缺少账户设备绑定标识")
 	}
 	if reason == "" {
-		reason = "验证本机身份以解锁 Cage"
+		reason = "验证本机身份以解锁 Airlock"
 	}
 	cSvc := C.CString(accountDeviceService)
 	cAcct := C.CString(accountKeychainName(kind, binding))
@@ -212,7 +212,7 @@ func StoreTrialGuestPassword(password string) error {
 
 	cSvc := C.CString(trialGuestKeychainSvc)
 	cAcct := C.CString(trialGuestKeychainAcct)
-	cLabel := C.CString("Cage macOS 试用客机密码")
+	cLabel := C.CString("Airlock macOS 试用客机密码")
 	defer C.free(unsafe.Pointer(cSvc))
 	defer C.free(unsafe.Pointer(cAcct))
 	defer C.free(unsafe.Pointer(cLabel))
@@ -236,7 +236,7 @@ func StoreTrialGuestPassword(password string) error {
 func ConsumeTrialGuestPassword() (string, error) {
 	cSvc := C.CString(trialGuestKeychainSvc)
 	cAcct := C.CString(trialGuestKeychainAcct)
-	cReason := C.CString("读取 Cage 试用客机自动登录密码")
+	cReason := C.CString("读取 Airlock 试用客机自动登录密码")
 	defer C.free(unsafe.Pointer(cSvc))
 	defer C.free(unsafe.Pointer(cAcct))
 	defer C.free(unsafe.Pointer(cReason))

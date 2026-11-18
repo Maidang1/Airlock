@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 if [[ "$(uname -s)" != Darwin || "$(uname -m)" != arm64 ]]; then
-  echo "Cage.app must be built on Apple Silicon macOS." >&2
+  echo "Airlock.app must be built on Apple Silicon macOS." >&2
   exit 1
 fi
 
@@ -34,7 +34,7 @@ fi
 
 CGO_ENABLED=1 go tool mygo build "${build_flags[@]}"
 
-app="_output/dist/darwin-arm64/Cage.app"
+app="_output/dist/darwin-arm64/Airlock.app"
 if [[ ! -d "$app" ]]; then
   echo "Expected app bundle not found at $app" >&2
   exit 1
@@ -62,12 +62,12 @@ echo "Built and verified: $app"
 
 if [[ "$install" == true ]]; then
   mkdir -p "$HOME/Applications"
-  dest="$HOME/Applications/Cage.app"
-  stage="$(mktemp -d "$HOME/Applications/.Cage-install.XXXXXX")"
+  dest="$HOME/Applications/Airlock.app"
+  stage="$(mktemp -d "$HOME/Applications/.Airlock-install.XXXXXX")"
   trap 'rm -rf "$stage"' EXIT
-  ditto "$app" "$stage/Cage.app"
-  codesign --verify --deep --strict --verbose=2 "$stage/Cage.app"
+  ditto "$app" "$stage/Airlock.app"
+  codesign --verify --deep --strict --verbose=2 "$stage/Airlock.app"
   rm -rf "$dest"
-  mv "$stage/Cage.app" "$dest"
+  mv "$stage/Airlock.app" "$dest"
   echo "Installed: $dest"
 fi

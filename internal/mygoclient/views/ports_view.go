@@ -222,7 +222,7 @@ func (r *RootView) renderPortConfigBar(c *ui.Context, pal Palette, snap core.Sna
 		ui.Row(c).FillWidth().Justify(ui.SpaceBetween).AlignItems(ui.Center).Gap(10).Children(func() {
 			ui.Column(c).Gap(1).Grow(1).Shrink(1).Children(func() {
 				ui.Text(c, "独立代理端口（127.0.0.1 回环防冲突）").FontSize(13).Bold().TextColor(pal.Text)
-				ui.Text(c, "当宿主机已运行代理或另一份 Cage 实例时，可自定义独立端口避免冲突").FontSize(11).TextColor(pal.Muted)
+				ui.Text(c, "当宿主机已运行代理或另一份 Airlock 实例时，可自定义独立端口避免冲突").FontSize(11).TextColor(pal.Muted)
 			})
 			if checking && rep == nil {
 				PillBadge(c, "正在检测…", pal.Muted, pal.CardBg)
@@ -297,7 +297,7 @@ func (r *RootView) renderPortReportTables(c *ui.Context, pal Palette, rep *core.
 		return
 	}
 	ui.Column(c).Gap(8).FillWidth().Padding(4, 0, 0, 0).Children(func() {
-		ui.Text(c, "Cage 本机回环服务端口").FontSize(12).Bold().TextColor(pal.Text)
+		ui.Text(c, "Airlock 本机回环服务端口").FontSize(12).Bold().TextColor(pal.Text)
 		if len(rep.CageServices) > 0 {
 			ui.Column(c).FillWidth().Background(pal.CardBg).Border(1, pal.Border).Radius(8).Gap(0).Children(func() {
 				for idx, svc := range rep.CageServices {
@@ -353,7 +353,7 @@ func (r *RootView) renderPortConflictSettingsTab(c *ui.Context, pal Palette, sna
 
 	Card(c, pal, func() {
 		ui.Row(c).FillWidth().Justify(ui.SpaceBetween).AlignItems(ui.Center).Children(func() {
-			SectionHeading(c, pal, "端口配置与宿主机冲突检测", "为内置 Mihomo 核心指定独立的 127.0.0.1 端口，避免与宿主机 Clash / 其他 Cage 实例冲突")
+			SectionHeading(c, pal, "端口配置与宿主机冲突检测", "为内置 Mihomo 核心指定独立的 127.0.0.1 端口，避免与宿主机 Clash / 其他 Airlock 实例冲突")
 			if ui.Button(c, "重新扫描宿主机端口").Disabled(checking || busy).Clicked() {
 				port := r.parseDesiredProxyPort(r.effectiveProxyPort(snap))
 				st.mu.Lock()
@@ -369,7 +369,7 @@ func (r *RootView) renderPortConflictSettingsTab(c *ui.Context, pal Palette, sna
 
 	Card(c, pal, func() {
 		ui.Text(c, "端口冲突处理说明").FontSize(14).Bold().TextColor(pal.Text)
-		ui.Text(c, "• 开发模式（Cage Dev）与正式版（/Applications/Cage.app）若同时运行，默认都会尝试使用 17896，可在上方一键分配独立空闲端口。").FontSize(12).TextColor(pal.Muted)
+		ui.Text(c, "• 开发模式（Airlock Dev）与正式版（/Applications/Airlock.app）若同时运行，默认都会尝试使用 17896，可在上方一键分配独立空闲端口。").FontSize(12).TextColor(pal.Muted)
 		ui.Text(c, "• 控制台 API 与 Lima 客机 SSH 均由系统自动绑定 127.0.0.1 动态空闲端口，不会与宿主机常规服务冲突。").FontSize(12).TextColor(pal.Muted)
 		if rep != nil && !rep.CheckedAt.IsZero() {
 			ui.Text(c, "最近扫描时间："+rep.CheckedAt.Local().Format("15:04:05")).FontSize(11).TextColor(pal.Muted)

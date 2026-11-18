@@ -1,6 +1,6 @@
-# Cage (MyGo macOS Edition)
+# Airlock (MyGo macOS Edition)
 
-Cage 为 macOS 提供安全、可控的隔离环境工作台（基于 [MyGo](https://mygo.egoist.dev/) 原生桌面框架重写，保留 **macOS 主机端全套能力**，移除 Windows / Linux 宿主机桌面与安装器代码）。
+Airlock 为 macOS 提供安全、可控的隔离环境工作台（基于 [MyGo](https://mygo.egoist.dev/) 原生桌面框架构建，保留 **macOS 主机端全套能力**，并兼容 `~/.claude-cage` 配置与 `cage` 辅助命令）。
 
 ## 架构概览
 
@@ -34,7 +34,7 @@ GOTOOLCHAIN=auto make test-go
 # 2. 启动桌面开发模式
 GOTOOLCHAIN=auto make dev
 
-# 3. 打包签名完整的 Cage.app / Cage.dmg 与轻量 Cage Client.app
+# 3. 打包签名完整的 Airlock.app / Airlock.dmg 与轻量 Airlock Client.app
 GOTOOLCHAIN=auto make build-app
 GOTOOLCHAIN=auto make dmg
 GOTOOLCHAIN=auto make build-client
@@ -45,10 +45,10 @@ GOTOOLCHAIN=auto make build-client
 构建完成后可执行以下检查确保虚拟化权限与内嵌资源完整：
 
 ```bash
-codesign --verify --deep --strict _output/dist/darwin-arm64/Cage.app
-codesign -d --entitlements :- _output/dist/darwin-arm64/Cage.app/Contents/Resources/cage
-_output/dist/darwin-arm64/Cage.app/Contents/Resources/cage verify-macos-guest
-_output/dist/darwin-arm64/Cage.app/Contents/Resources/cage verify-vm-assets
-_output/dist/darwin-arm64/Cage.app/Contents/Resources/cage verify-web-assets
-codesign --verify --deep --strict "_output/client-dist/darwin-arm64/Cage Client.app"
+codesign --verify --deep --strict _output/dist/darwin-arm64/Airlock.app
+codesign -d --entitlements :- _output/dist/darwin-arm64/Airlock.app/Contents/Resources/cage
+_output/dist/darwin-arm64/Airlock.app/Contents/Resources/cage verify-macos-guest
+_output/dist/darwin-arm64/Airlock.app/Contents/Resources/cage verify-vm-assets
+_output/dist/darwin-arm64/Airlock.app/Contents/Resources/cage verify-web-assets
+codesign --verify --deep --strict "_output/client-dist/darwin-arm64/Airlock Client.app"
 ```

@@ -24,7 +24,7 @@ function isCage(bundle) {
   }
 }
 function inUse(bundle) {
-  const files = ["Contents/MacOS/Cage", "Contents/Resources/cage"].map((file) => path.join(bundle, file));
+  const files = ["Contents/MacOS/Airlock", "Contents/MacOS/Cage", "Contents/Resources/cage"].map((file) => path.join(bundle, file));
   try {
     return execFileSync("/usr/sbin/lsof", ["-t", ...files], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim() !== "";
   } catch (error) {
@@ -42,7 +42,7 @@ function intact(bundle) {
 
 export async function cleanupApps({ keep, roots, onInUse = () => {}, onModified = () => {} }) {
   if (!keep.length)
-    throw new Error("At least one verified Cage.app must be kept.");
+    throw new Error("At least one verified Airlock.app must be kept.");
   const retained = new Set();
   for (const bundle of keep) {
     if (!isCage(bundle) || !intact(bundle)) throw new Error(`Invalid replacement App: ${bundle}`);

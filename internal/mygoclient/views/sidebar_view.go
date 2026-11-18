@@ -82,7 +82,7 @@ func (r *RootView) renderSidebar(c *ui.Context, pal Palette, snap core.Snapshot)
 					r.mu.Unlock()
 				}
 				ui.Icon(c, IconCageBrand).FontSize(14).TextColor(pal.Text)
-				ui.Text(c, "Cage").FontSize(13).Bold().TextColor(pal.Text).SingleLine()
+				ui.Text(c, "Airlock").FontSize(13).Bold().TextColor(pal.Text).SingleLine()
 			})
 
 		// 2. Top workspace navigation (Magpie "使用" group)
@@ -458,7 +458,7 @@ func (r *RootView) renderSidebar(c *ui.Context, pal Palette, snap core.Snapshot)
 					r.OpenSettings()
 				}
 
-				connName := "本机 Cage"
+				connName := "本机 Airlock"
 				if snap.Context.Mode == "remote" {
 					if snap.Context.Name != "" {
 						connName = snap.Context.Name
@@ -526,7 +526,7 @@ func (r *RootView) renderSettingsSidebar(c *ui.Context, pal Palette, snap core.S
 			})
 
 		ui.Box(c).FillWidth().Padding(4, 14, 6, 14).Children(func() {
-			ui.Text(c, "Cage 设置").FontSize(13).Bold().TextColor(pal.Text).SingleLine()
+			ui.Text(c, "Airlock 设置").FontSize(13).Bold().TextColor(pal.Text).SingleLine()
 		})
 
 		ui.Scroll(c).FillWidth().Grow(1).Padding(2, 8, 8, 8).Children(func() {
@@ -574,9 +574,9 @@ func (r *RootView) renderSettingsSidebar(c *ui.Context, pal Palette, snap core.S
 			Children(func() {
 				ver := snap.Build.Version
 				if ver == "" {
-					ver = "Cage"
+					ver = "Airlock"
 				} else {
-					ver = "Cage " + ver
+					ver = "Airlock " + ver
 				}
 				ui.Text(c, ver).FontSize(11).TextColor(pal.Muted).SingleLine()
 				ui.Row(c).Gap(5).AlignItems(ui.Center).Children(func() {
@@ -646,7 +646,7 @@ func (r *RootView) pickAndActivateProject() (string, bool) {
 		return "", false
 	}
 	paths, err := r.Bridge.OpenDialog(core.NativeDialogOptions{
-		Title:     "选择要授权给 Cage 的项目目录",
+		Title:     "选择要授权给 Airlock 的项目目录",
 		Directory: true,
 	})
 	if err != nil || len(paths) == 0 {

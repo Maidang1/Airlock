@@ -181,7 +181,7 @@ func (c *ControllerClient) ResolveExecutable() (string, error) {
 
 	var candidates []string
 	if prof := macnative.DetectProfile(); prof.BundlePath != "" {
-		// Both Cage.app and Cage Client.app bundle their backend helper as Contents/Resources/cage.
+		// Both Airlock.app and Airlock Client.app bundle their backend helper as Contents/Resources/cage.
 		candidates = append(candidates, filepath.Join(prof.BundlePath, "Contents", "Resources", "cage"))
 		if name != "cage" {
 			candidates = append(candidates, filepath.Join(prof.BundlePath, "Contents", "Resources", name))
@@ -204,6 +204,7 @@ func (c *ControllerClient) ResolveExecutable() (string, error) {
 		for i := 0; i < 4; i++ {
 			candidates = append(candidates,
 				filepath.Join(cur, "_output", "bin", name),
+				filepath.Join(cur, "build", "Airlock.app", "Contents", "Resources", name),
 				filepath.Join(cur, "build", "Cage.app", "Contents", "Resources", name),
 			)
 			parent := filepath.Dir(cur)

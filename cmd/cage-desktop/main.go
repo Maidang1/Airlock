@@ -257,7 +257,7 @@ func main() {
 					Parent:             bridge.window(),
 					Type:               mygo.MessageQuestion,
 					Title:              "隔离环境仍在运行",
-					Message:            "是否停止正在运行的虚拟机环境并退出 Cage？",
+					Message:            "是否停止正在运行的虚拟机环境并退出 Airlock？",
 					Detail:             "选择「保持后台运行」可让环境与定时任务在后台继续。",
 					Buttons:            []string{"停止环境并退出", "保持后台运行", "取消"},
 					DefaultButton:      0,
@@ -292,9 +292,9 @@ func main() {
 	})
 
 	mygo.App.WhenReady(func() {
-		title := "Cage"
+		title := "Airlock"
 		if profile.ClientOnly {
-			title = "Cage Client"
+			title = "Airlock Client"
 		}
 		w := mygo.NewWindow(mygo.WindowOptions{
 			Title:                title,

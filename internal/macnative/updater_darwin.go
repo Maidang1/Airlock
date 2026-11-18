@@ -337,7 +337,7 @@ func VerifyAppBundle(ctx context.Context, appPath, expectedVersion, expectedTeam
 	}
 	linfo, err := os.Lstat(appPath)
 	if err != nil || !linfo.IsDir() || linfo.Mode()&os.ModeSymlink != 0 || filepath.Ext(appPath) != ".app" {
-		return errors.New("更新包中缺少有效的 Cage.app")
+		return errors.New("更新包中缺少有效的 Airlock.app")
 	}
 	plistRaw, err := os.ReadFile(filepath.Join(appPath, "Contents", "Info.plist"))
 	if err != nil {
@@ -353,7 +353,8 @@ func VerifyAppBundle(ctx context.Context, appPath, expectedVersion, expectedTeam
 	if ver, _ := info["CageVersion"].(string); ver != expectedVersion {
 		return errors.New("更新包的应用身份或版本不匹配")
 	}
-	if exe, _ := info["CFBundleExecutable"].(string); exe != "Cage" {
+	exe, _ := info["CFBundleExecutable"].(string)
+	if exe != "Airlock" && exe != "Cage" {
 		return errors.New("更新包的应用身份或版本不匹配")
 	}
 	if minOS, _ := info["LSMinimumSystemVersion"].(string); minOS != "" {
@@ -368,7 +369,7 @@ func VerifyAppBundle(ctx context.Context, appPath, expectedVersion, expectedTeam
 	if runtime.GOARCH == "amd64" {
 		arch = "x86_64"
 	}
-	if _, err := runTool(ctx, 90*time.Second, "/usr/bin/lipo", filepath.Join(appPath, "Contents", "MacOS", "Cage"), "-verify_arch", arch); err != nil {
+	if _, err := runTool(ctx, 90*time.Second, "/usr/bin/lipo", filepath.Join(appPath, "Contents", "MacOS", exe), "-verify_arch", arch); err != nil {
 		return err
 	}
 	for _, name := range []string{"cage", "mihomo", "CageUpdateInstaller"} {
@@ -453,14 +454,17 @@ func ExtractVerifiedDMG(ctx context.Context, archivePath, hash, version, team, d
 	if ctx.Err() != nil {
 		return "", errors.New("更新验证已取消")
 	}
-	source := filepath.Join(mountPoint, "Cage.app")
+	source := filepath.Join(mountPoint, "Airlock.app")
+	if _, err := os.Lstat(source); os.IsNotExist(err) {
+		source = filepath.Join(mountPoint, "Cage.app")
+	}
 	if err := ValidateAppTree(ctx, source); err != nil {
 		return "", err
 	}
 	if err := VerifyAppBundle(ctx, source, version, team, true); err != nil {
 		return "", err
 	}
-	target := filepath.Join(directory, "Cage.app")
+	target := filepath.Join(directory, filepath.Base(source))
 	if _, err := runTool(ctx, 180*time.Second, "/usr/bin/ditto", source, target); err != nil {
 		return "", err
 	}
@@ -606,7 +610,7 @@ func (u *AppUpdater) MarkLaunchReady() {
 	u.launchAcked = true
 	snap := u.changeLocked(map[string]any{
 		"phase":   "current",
-		"message": fmt.Sprintf("Cage 已更新至 %s", ver),
+		"message": fmt.Sprintf("Airlock 已更新至 %s", ver),
 	})
 	u.mu.Unlock()
 	u.emit(snap)
@@ -893,13 +897,13 @@ func (u *AppUpdater) verifyDownloadLocked(result map[string]any, op int) {
 	if err != nil {
 		rootResolved = filepath.Clean(u.profile.UpdatesDir)
 	}
-	if !strings.HasPrefix(archiveResolved, rootResolved+"/download-") || filepath.Base(archiveResolved) != "Cage.dmg" {
+	if !strings.HasPrefix(archiveResolved, rootResolved+"/download-") || (filepath.Base(archiveResolved) != "Airlock.dmg" && filepath.Base(archiveResolved) != "Cage.dmg") {
 		s := u.failLocked("安装包路径不属于本次私有下载", "")
 		u.emit(s)
 		return
 	}
 	if u.profile.BundlePath == "" {
-		s := u.failLocked("请先将 Cage 安装到应用程序目录，再自动更新", "")
+		s := u.failLocked("请先将 Airlock 安装到应用程序目录，再自动更新", "")
 		u.emit(s)
 		return
 	}
@@ -990,7 +994,7 @@ func (u *AppUpdater) beginInstallationLocked() {
 
 		bundleResolved, err := filepath.EvalSymlinks(u.profile.BundlePath)
 		if err != nil || bundleResolved == "" || strings.HasPrefix(bundleResolved, "/Volumes/") || filepath.Ext(bundleResolved) != ".app" {
-			u.emitFailureForOp(op, "请先将 Cage 安装到应用程序目录，再自动更新")
+			u.emitFailureForOp(op, "请先将 Airlock 安装到应用程序目录，再自动更新")
 			return
 		}
 		if err := VerifyAppBundle(ctx, prep.app, prep.version, prep.team, true); err != nil {
@@ -1189,7 +1193,7 @@ func (u *AppUpdater) prepareEnvironment(stop bool) {
 				return
 			}
 			u.committed = true
-			s := u.changeLocked(map[string]any{"phase": "installing", "message": "正在安装并重启 Cage"})
+			s := u.changeLocked(map[string]any{"phase": "installing", "message": "正在安装并重启 Airlock"})
 			u.mu.Unlock()
 			u.emit(s)
 			if u.quit != nil {

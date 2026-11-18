@@ -13,7 +13,7 @@ func (r *RootView) renderBootLoading(c *ui.Context, pal Palette) {
 		TitleBarClearance(c)
 		ui.Column(c).FillWidth().Grow(1).Center().Gap(14).Children(func() {
 			ui.Spinner(c)
-			ui.Text(c, "正在启动 Cage 工作台…").FontSize(15).Bold().TextColor(pal.Text)
+			ui.Text(c, "正在启动 Airlock 工作台…").FontSize(15).Bold().TextColor(pal.Text)
 			ui.Text(c, "正在连接本地后台控制进程与加密存储").FontSize(12).TextColor(pal.Muted)
 		})
 	})
@@ -25,7 +25,7 @@ func (r *RootView) renderBootError(c *ui.Context, pal Palette, snap core.Snapsho
 		ui.Column(c).FillWidth().Grow(1).Center().Padding(24).Children(func() {
 		ui.Box(c).MaxWidth(520).FillWidth().Children(func() {
 			Card(c, pal, func() {
-				SectionHeading(c, pal, "无法连接到 Cage 服务", "请确认后台控制进程和本地存储权限正常")
+				SectionHeading(c, pal, "无法连接到 Airlock 服务", "请确认后台控制进程和本地存储权限正常")
 				ErrorBanner(c, pal, snap.BootError)
 				ui.Row(c).Gap(10).Children(func() {
 					if ui.PrimaryButton(c, "重试连接").Clicked() {
@@ -61,7 +61,7 @@ func (r *RootView) renderStorageRecovery(c *ui.Context, pal Palette, snap core.S
 	ui.Column(c).Fill().Center().Background(pal.Bg).Padding(24).Children(func() {
 		ui.Box(c).MaxWidth(560).FillWidth().Children(func() {
 			Card(c, pal, func() {
-				SectionHeading(c, pal, "需要恢复环境存储", "原 Cage 环境目录需要确认或重新挂载")
+				SectionHeading(c, pal, "需要恢复环境存储", "原 Airlock 环境目录需要确认或重新挂载")
 				ErrorBanner(c, pal, rec.Error)
 				ErrorBanner(c, pal, errMsg)
 				InfoBanner(c, pal, success)

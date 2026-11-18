@@ -11,9 +11,9 @@ import (
 )
 
 func installMenus(rv *views.RootView, store *core.Store, bridge *mygoHostBridge, win *mygo.Window) {
-	appName := "Cage"
+	appName := "Airlock"
 	if store.Client().ClientOnly() {
-		appName = "Cage Client"
+		appName = "Airlock Client"
 	}
 	menu := mygo.NewMenu([]*mygo.MenuItem{
 		{
@@ -162,7 +162,7 @@ func installMenus(rv *views.RootView, store *core.Store, bridge *mygoHostBridge,
 				{Role: mygo.RoleZoom},
 				mygo.Separator(),
 				{
-					Label: "显示 Cage 主窗口",
+					Label: "显示 Airlock 主窗口",
 					Click: func(_ *mygo.MenuItem, _ *mygo.Window) {
 						win.Show()
 						win.Focus()

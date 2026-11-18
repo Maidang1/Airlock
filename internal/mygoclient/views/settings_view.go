@@ -406,7 +406,7 @@ func (r *RootView) renderSecuritySettingsTab(c *ui.Context, pal Palette, snap co
 						go r.toggleDeviceEnroll("biometric", false, acct.DeviceBinding)
 					}
 				}
-				if ui.Button(c, "立即锁定 Cage").Disabled(busy).Clicked() {
+				if ui.Button(c, "立即锁定 Airlock").Disabled(busy).Clicked() {
 					go r.postSimple("/api/account/lock", map[string]any{})
 				}
 				if ui.Button(c, "退出登录并停止环境").Disabled(busy).Clicked() {

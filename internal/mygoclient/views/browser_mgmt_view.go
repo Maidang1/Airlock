@@ -139,7 +139,7 @@ func (r *RootView) renderVaultTab(c *ui.Context, pal Palette, snap core.Snapshot
 			}
 		})
 		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, "查看明文密码需输入 Cage 账户密码：").FontSize(12).TextColor(pal.Muted)
+			ui.Text(c, "查看明文密码需输入 Airlock 账户密码：").FontSize(12).TextColor(pal.Muted)
 			ui.TextInput(c, &st.revealAcctPW).Password().Placeholder("账户解锁密码").Width(200)
 		})
 	})
