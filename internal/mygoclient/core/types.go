@@ -275,6 +275,7 @@ type SettingsView struct {
 	Clock12Hour           bool       `json:"clock_12_hour"`
 	AutoTimezone          bool       `json:"auto_timezone"`
 	AutoLanguage          bool       `json:"auto_language"`
+	HerdrSharedAgents     bool       `json:"herdr_shared_agents"`
 	DNSURL                string     `json:"dns_url"`
 	Timezone              string     `json:"timezone"`
 	Locale                string     `json:"locale"`

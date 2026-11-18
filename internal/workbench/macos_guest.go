@@ -30,7 +30,7 @@ func macOSWorkbenchRoute(path string) bool {
 		return id == "requests" || id == "open" || browserFileID.MatchString(id)
 	}
 	switch path {
-	case "/api/environment/macos-screen-sharing", "/api/macos/first-setup", "/api/appearance/codex", "/api/macos/project-approval", "/api/macos/exit-policy", "/api/macos/login", "/api/macos/maintenance":
+	case "/api/environment/macos-screen-sharing", "/api/macos/first-setup", "/api/appearance/codex", "/api/macos/project-approval", "/api/macos/exit-policy", "/api/macos/login", "/api/macos/maintenance", "/api/herdr-bridge", "/api/herdr-bridge/install", "/api/herdr-bridge/start-server", "/api/herdr-bridge/close-session":
 		return true
 	}
 	return strings.HasPrefix(path, "/api/macos/claude/") || strings.HasPrefix(path, "/api/macos-browser/")

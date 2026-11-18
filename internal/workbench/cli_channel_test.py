@@ -415,6 +415,34 @@ class ChannelTests(unittest.TestCase):
         self.assertEqual(resumed["params"]["meta"], {"resume":"true"})
         self.assertFalse(select.select([process.stdout], [], [], 0.1)[0], "resume was injected twice")
 
+    def test_launch_includes_herdr_mcp_when_valid(self):
+        connection = str(uuid.uuid4())
+        entry = {
+            "type": "http",
+            "url": "http://127.0.0.1:18520/mcp",
+            "headers": {"Authorization": "Bearer herdr-secret"},
+        }
+        with patch.object(channel, "migrate_cage_policy"), patch.object(channel.os, "execvpe") as execute:
+            channel.launch({
+                "id": connection,
+                "prefix": ["claude"],
+                "mcp": {"herdr": entry},
+            })
+        args = execute.call_args.args[1]
+        config = channel.read_json(Path(args[args.index("--mcp-config") + 1]))
+        self.assertEqual(config["mcpServers"]["herdr"], entry)
+
+        connection2 = str(uuid.uuid4())
+        with patch.object(channel, "migrate_cage_policy"), patch.object(channel.os, "execvpe") as execute:
+            channel.launch({
+                "id": connection2,
+                "prefix": ["claude"],
+                "mcp": "invalid",
+            })
+        args2 = execute.call_args.args[1]
+        config2 = channel.read_json(Path(args2[args2.index("--mcp-config") + 1]))
+        self.assertNotIn("herdr", config2["mcpServers"])
+
 
 if __name__ == "__main__":
     unittest.main()

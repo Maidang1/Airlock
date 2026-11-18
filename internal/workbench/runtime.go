@@ -643,6 +643,7 @@ func (s *Server) apply(v savedProfile, validate bool) error {
 	s.preferences = v.Preferences
 	token, ready := s.credentials.Token, s.ready
 	s.mu.Unlock()
+	s.syncHerdrBridge()
 	s.jobs.execution().settingsSaved()
 	if !changed && ready && browserHomeURL(oldPrefs) != browserHomeURL(v.Preferences) {
 		ctx, cancel := s.controlContext()

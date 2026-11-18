@@ -132,6 +132,8 @@ type Server struct {
 	closeOnce                                        sync.Once
 	closeErr                                         error
 	controlPublished                                 bool
+	herdrMu                                          sync.Mutex
+	herdr                                            *herdrBridgeRuntime
 }
 
 func randomToken() string {
@@ -502,6 +504,10 @@ func (s *Server) handler() http.Handler {
 	mux.HandleFunc("POST /api/terminals/{id}/login-link", s.terminalLoginLink)
 	mux.HandleFunc("POST /api/terminals/{id}/metadata", s.terminalSessionMetadata)
 	mux.HandleFunc("GET /api/terminals/{id}/stream", s.terminalStream)
+	mux.HandleFunc("GET /api/herdr-bridge", s.herdrBridgeStatus)
+	mux.HandleFunc("POST /api/herdr-bridge/install", s.herdrBridgeInstall)
+	mux.HandleFunc("POST /api/herdr-bridge/start-server", s.herdrBridgeStartServer)
+	mux.HandleFunc("POST /api/herdr-bridge/close-session", s.herdrBridgeCloseSession)
 	web, _ := fs.Sub(assets, "web")
 	mux.Handle("GET /", http.FileServer(http.FS(web)))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -753,6 +759,7 @@ func (s *Server) proposed(w http.ResponseWriter, r *http.Request) (savedProfile,
 	input.BalancedDisplay = s.preferences.BalancedDisplay
 	input.ProjectFileCache = s.preferences.ProjectFileCache
 	input.Clock12Hour = s.preferences.Clock12Hour
+	input.HerdrSharedAgents = s.preferences.HerdrSharedAgents
 	input.BrowserHomeURL = browserHomeURL(s.preferences)
 	s.mu.Unlock()
 	if !readJSON(w, r, &input) {

@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -313,6 +315,11 @@ func (s *Server) createTerminalLocked(input terminalRequest) (*terminalSession, 
 		}
 		for _, directory := range directories {
 			launchCommand += " --add-dir " + shellescape.Quote(directory)
+		}
+		if fields := strings.Fields(launchCommand); len(fields) > 0 && filepath.Base(fields[0]) == "claude" && !strings.Contains(launchCommand, "--mcp-config") {
+			if cfg := s.herdrMCPConfigArg(); cfg != "" {
+				launchCommand += " --mcp-config " + shellescape.Quote(cfg)
+			}
 		}
 	}
 	script := terminalScript(s.cliWorkspace(workspace), input.Kind, launchCommand)

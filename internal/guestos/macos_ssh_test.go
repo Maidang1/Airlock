@@ -72,3 +72,27 @@ func TestMacOSScreenSharingSSHArgs(t *testing.T) {
 		t.Fatal("regular SSH args gained screen-sharing options")
 	}
 }
+
+func TestMacOSRemoteForwardSSHArgs(t *testing.T) {
+	profile := t.TempDir()
+	writeMacOSSSHConfig(t, profile, 55413)
+
+	got, err := MacOSRemoteForwardSSHArgs(profile, "blue", 18520, 49152)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, value := range []string{
+		"55413", "blue", "-N", "ExitOnForwardFailure=yes",
+		"ClearAllForwardings=no", "127.0.0.1:18520:127.0.0.1:49152", "cage-macos",
+	} {
+		if !slices.Contains(got, value) {
+			t.Errorf("missing %q in %q", value, got)
+		}
+	}
+	if _, err := MacOSRemoteForwardSSHArgs(profile, "blue", 0, 49152); err == nil {
+		t.Fatal("accepted invalid guest port")
+	}
+	if _, err := MacOSRemoteForwardSSHArgs(profile, "blue", 18520, 70000); err == nil {
+		t.Fatal("accepted invalid host port")
+	}
+}

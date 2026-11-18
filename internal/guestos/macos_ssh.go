@@ -82,6 +82,24 @@ func MacOSScreenSharingSSHArgs(profile, user string, hostPort int) ([]string, er
 		"-L", fmt.Sprintf("127.0.0.1:%d:127.0.0.1:5900", hostPort)), nil
 }
 
+// MacOSRemoteForwardSSHArgs builds a loopback-only reverse SSH tunnel from a
+// guest loopback port to a host loopback listener.
+func MacOSRemoteForwardSSHArgs(profile, user string, guestPort, hostPort int) ([]string, error) {
+	if guestPort < 1 || guestPort > 65535 || hostPort < 1 || hostPort > 65535 {
+		return nil, errors.New("客机反向转发端口无效")
+	}
+	base, err := macOSSSHBaseArgs(profile, user)
+	if err != nil {
+		return nil, err
+	}
+	return append(base,
+		"-N",
+		"-o", "ExitOnForwardFailure=yes",
+		"-o", "ClearAllForwardings=no",
+		"-R", fmt.Sprintf("127.0.0.1:%d:127.0.0.1:%d", guestPort, hostPort),
+		"cage-macos"), nil
+}
+
 // MacOSProvisionUser reads Lima's installation identity, including older VMs.
 // Only these two dedicated identities may run privileged maintenance.
 func MacOSProvisionUser(profile string) (string, error) {

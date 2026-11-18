@@ -32,6 +32,7 @@ type Preferences struct {
 	Clock12Hour           bool   `json:"clock_12_hour"`
 	AutoTimezone          bool   `json:"auto_timezone"`
 	AutoLanguage          bool   `json:"auto_language"`
+	HerdrSharedAgents     bool   `json:"herdr_shared_agents"`
 }
 
 const defaultBrowserHomeURL = "https://www.bing.com/"

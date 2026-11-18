@@ -80,6 +80,7 @@ func (s *Server) startMonitors() {
 			s.monitorNetwork(ctx)
 		}
 	}()
+	s.syncHerdrBridge()
 }
 
 // beginClose seals workbench admission and cancels service work without waiting.
@@ -101,6 +102,7 @@ func (s *Server) beginClose() {
 // before it can finish and release its resources.
 func (s *Server) closeBackground() {
 	s.beginClose()
+	s.stopHerdrBridge()
 	s.jobs.close()
 	s.monitors.Wait()
 }

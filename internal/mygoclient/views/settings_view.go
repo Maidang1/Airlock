@@ -56,6 +56,11 @@ type settingsViewState struct {
 	cacheInv  *cacheInventoryResp
 	cacheSel  map[string]bool
 
+	herdrStatus  *herdrBridgeView
+	herdrLoaded  bool
+	herdrLoading bool
+	herdrLastJob string
+
 	qrImage   *ui.Bitmap
 	qrManual  string
 	qrRelay   string
@@ -82,8 +87,21 @@ func (r *RootView) ensureSettingsSynced(snap core.Snapshot) {
 	if needDev {
 		st.loadedDev = true
 	}
+	needHerdr := !st.herdrLoaded && r.Client != nil && snap.Settings.Keyboard != ""
+	if needHerdr {
+		st.herdrLoaded = true
+	}
+	herdrJobCompleted := !snap.Status.Job.Running && st.herdrLastJob != "" && (st.herdrLastJob == "herdr-install" || st.herdrLastJob == "herdr-start") && snap.Status.Job.ID != ""
+	if snap.Status.Job.Running && (snap.Status.Job.Kind == "herdr-install" || snap.Status.Job.Kind == "herdr-start") {
+		st.herdrLastJob = snap.Status.Job.Kind
+	} else if !snap.Status.Job.Running {
+		st.herdrLastJob = ""
+	}
 	st.mu.Unlock()
 
+	if needHerdr || herdrJobCompleted {
+		go r.refreshHerdrBridge(true)
+	}
 	if needDev {
 		res := r.Devices.Status(snap.Account.DeviceBinding, snap.Account.Devices)
 		st.mu.Lock()
@@ -179,6 +197,7 @@ func (r *RootView) renderGeneralSettingsTab(c *ui.Context, pal Palette, snap cor
 			ui.Checkbox(c, &st.form.Clock12Hour, "12 小时制时钟")
 			ui.Checkbox(c, &st.form.AutoTimezone, "自动同步出口时区")
 			ui.Checkbox(c, &st.form.AutoLanguage, "自动匹配出口语言")
+			ui.Checkbox(c, &st.form.HerdrSharedAgents, "启用 Herdr 宿主机 Agent 协同桥接（允许客机 Claude 通过受限 MCP 交互式派活给宿主机白名单 Agent）")
 
 			ui.Row(c).Gap(8).FillWidth().Children(func() {
 				ui.Column(c).Gap(4).Grow(1).Children(func() {
@@ -223,6 +242,135 @@ func (r *RootView) renderGeneralSettingsTab(c *ui.Context, pal Palette, snap cor
 					go r.saveAllSettings()
 				}
 			})
+		})
+	})
+
+	r.renderHerdrBridgeCard(c, pal, snap, busy)
+}
+
+type herdrHostView struct {
+	Installed         bool   `json:"installed"`
+	Backend           string `json:"backend"`
+	BinaryPath        string `json:"binary_path"`
+	Version           string `json:"version"`
+	ServerRunning     bool   `json:"server_running"`
+	SocketPath        string `json:"socket_path"`
+	BrewAvailable     bool   `json:"brew_available"`
+	RecommendedMethod string `json:"recommended_method"`
+	Error             string `json:"error"`
+}
+
+type herdrBridgeView struct {
+	Enabled         bool          `json:"enabled"`
+	Running         bool          `json:"running"`
+	GuestPort       int           `json:"guest_port"`
+	TunnelConnected bool          `json:"tunnel_connected"`
+	TunnelError     string        `json:"tunnel_error"`
+	HerdrAvailable  bool          `json:"herdr_available"`
+	HerdrError      string        `json:"herdr_error"`
+	ConfigPath      string        `json:"config_path"`
+	Host            herdrHostView `json:"host"`
+	Profiles        []struct {
+		Name string `json:"name"`
+	} `json:"profiles"`
+	ActiveSessions []struct {
+		SessionID string `json:"session_id"`
+	} `json:"active_sessions"`
+}
+
+func (r *RootView) renderHerdrBridgeCard(c *ui.Context, pal Palette, snap core.Snapshot, busy bool) {
+	st := &r.settings
+	st.mu.Lock()
+	hv := st.herdrStatus
+	loading := st.herdrLoading
+	st.mu.Unlock()
+
+	jobRunning := snap.Status.Job.Running
+	herdrJobActive := jobRunning && (snap.Status.Job.Kind == "herdr-install" || snap.Status.Job.Kind == "herdr-start")
+
+	Card(c, pal, func() {
+		ui.Text(c, "Herdr 宿主机安装与 Agent 协同").FontSize(14).Bold().TextColor(pal.Text)
+		ui.Text(c, "在宿主机安装并运行 Herdr 后，可开启上方桥接开关，让隔离客机内的 Claude Code 安全地交互式派活给宿主机白名单 Agent。").FontSize(12).TextColor(pal.Muted)
+
+		if hv == nil {
+			KeyValueRow(c, pal, "宿主机状态", "尚未检测")
+		} else {
+			hostLabel := "未安装"
+			if hv.Host.Installed {
+				ver := hv.Host.Version
+				if ver == "" {
+					ver = hv.Host.Backend
+				} else if hv.Host.Backend != "" {
+					ver = hv.Host.Backend + " " + ver
+				}
+				if hv.Host.ServerRunning {
+					hostLabel = "已安装并运行中 (" + ver + ")"
+				} else {
+					hostLabel = "已安装，后台服务未运行 (" + ver + ")"
+				}
+			}
+			KeyValueRow(c, pal, "宿主机 Herdr", hostLabel)
+			if hv.Host.BinaryPath != "" {
+				KeyValueRow(c, pal, "可执行路径", hv.Host.BinaryPath)
+			}
+			if hv.Host.SocketPath != "" {
+				KeyValueRow(c, pal, "Socket", hv.Host.SocketPath)
+			}
+			bridgeLabel := "未启用"
+			if hv.Enabled {
+				if hv.TunnelConnected {
+					bridgeLabel = fmt.Sprintf("已连接 (客机 127.0.0.1:%d · 活跃会话 %d)", hv.GuestPort, len(hv.ActiveSessions))
+				} else if hv.Running {
+					bridgeLabel = fmt.Sprintf("桥接就绪，等待客机隧道 (客机端口 %d)", hv.GuestPort)
+				} else {
+					bridgeLabel = "已启用，初始化中"
+				}
+			}
+			KeyValueRow(c, pal, "MCP 桥接隧道", bridgeLabel)
+			if len(hv.Profiles) > 0 {
+				names := make([]string, 0, len(hv.Profiles))
+				for _, p := range hv.Profiles {
+					names = append(names, p.Name)
+				}
+				KeyValueRow(c, pal, "白名单 Agent", strings.Join(names, ", "))
+			}
+			if hv.ConfigPath != "" {
+				KeyValueRow(c, pal, "Profile 配置", hv.ConfigPath)
+			}
+			if hv.Host.Error != "" && !hv.Host.ServerRunning {
+				ui.Text(c, hv.Host.Error).FontSize(11).TextColor(pal.Warning)
+			}
+		}
+
+		if herdrJobActive && snap.Status.Job.Message != "" {
+			InfoBanner(c, pal, snap.Status.Job.Message)
+		}
+
+		ui.Row(c).Gap(8).Wrap().Children(func() {
+			if ui.Button(c, "刷新 Herdr 状态").Disabled(busy || loading).Clicked() {
+				go r.refreshHerdrBridge(false)
+			}
+			if hv == nil || !hv.Host.Installed {
+				if hv != nil && hv.Host.BrewAvailable {
+					if ui.PrimaryButton(c, "一键安装 Herdr (Homebrew)").Disabled(busy || jobRunning).Clicked() {
+						go r.installHerdr("brew")
+					}
+				}
+				if ui.Button(c, "一键安装 Herdr (官方脚本)").Disabled(busy || jobRunning).Clicked() {
+					go r.installHerdr("script")
+				}
+			} else {
+				if !hv.Host.ServerRunning {
+					if ui.PrimaryButton(c, "启动 Herdr 后台服务").Disabled(busy || jobRunning).Clicked() {
+						go r.startHerdrServer()
+					}
+				}
+				if hv.Host.BrewAvailable && hv.Host.Backend == "herdr" {
+					if ui.Button(c, "通过 Homebrew 检查更新").Disabled(busy || jobRunning).Clicked() {
+						go r.installHerdr("brew")
+					}
+				}
+			}
 		})
 	})
 }
@@ -523,6 +671,87 @@ func (r *RootView) saveAllSettings() {
 		st.errMsg = err.Error()
 	} else {
 		st.notice = "设置已保存"
+	}
+	st.mu.Unlock()
+	r.Store.TriggerRefresh()
+	go r.refreshHerdrBridge(true)
+	r.Invalidate()
+}
+
+func (r *RootView) refreshHerdrBridge(silent bool) {
+	if r.Client == nil {
+		return
+	}
+	st := &r.settings
+	st.mu.Lock()
+	st.herdrLoading = true
+	if !silent {
+		st.errMsg = ""
+	}
+	st.mu.Unlock()
+
+	var resp herdrBridgeView
+	err := r.Client.GetJSON(context.Background(), "/api/herdr-bridge", &resp)
+	st.mu.Lock()
+	st.herdrLoading = false
+	if err != nil {
+		if !silent {
+			st.errMsg = "获取 Herdr 状态失败：" + err.Error()
+		}
+	} else {
+		st.herdrStatus = &resp
+	}
+	st.mu.Unlock()
+	r.Invalidate()
+}
+
+func (r *RootView) installHerdr(method string) {
+	if r.Client == nil {
+		return
+	}
+	st := &r.settings
+	st.mu.Lock()
+	st.busy = true
+	st.errMsg = ""
+	st.notice = ""
+	st.mu.Unlock()
+
+	err := r.Client.PostJSON(context.Background(), "/api/herdr-bridge/install", map[string]any{
+		"method":       method,
+		"start_server": true,
+	}, nil)
+	st.mu.Lock()
+	st.busy = false
+	if err != nil {
+		st.errMsg = err.Error()
+	} else {
+		st.herdrLastJob = "herdr-install"
+		st.notice = "已开始在宿主机安装/更新 Herdr，请查看状态进度"
+	}
+	st.mu.Unlock()
+	r.Store.TriggerRefresh()
+	r.Invalidate()
+}
+
+func (r *RootView) startHerdrServer() {
+	if r.Client == nil {
+		return
+	}
+	st := &r.settings
+	st.mu.Lock()
+	st.busy = true
+	st.errMsg = ""
+	st.notice = ""
+	st.mu.Unlock()
+
+	err := r.Client.PostJSON(context.Background(), "/api/herdr-bridge/start-server", map[string]any{}, nil)
+	st.mu.Lock()
+	st.busy = false
+	if err != nil {
+		st.errMsg = err.Error()
+	} else {
+		st.herdrLastJob = "herdr-start"
+		st.notice = "正在启动宿主机 Herdr 后台服务"
 	}
 	st.mu.Unlock()
 	r.Store.TriggerRefresh()

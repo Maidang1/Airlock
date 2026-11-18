@@ -508,6 +508,9 @@ func (s *Server) prepareTerminalConversation(workspace string, selection claudeS
 		record.Connection = record.Switch.ID
 	}
 	payload := map[string]any{"id": record.Connection, "session_id": record.CLIID, "prefix": prefix, "config": record.GuestConfig}
+	if herdr := s.herdrMCPServerConfig(); herdr != nil {
+		payload["mcp"] = map[string]any{"herdr": herdr}
+	}
 	if len(directories) > 0 {
 		payload["additional_directories"] = directories
 	}

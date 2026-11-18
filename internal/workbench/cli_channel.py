@@ -740,6 +740,7 @@ def launch(request):
     save(folder / "settings.json", settings)
     argv = _runtime["command"](__file__, ["serve", connection])
     config = {"mcpServers": {connection: {"command": argv[0], "args": argv[1:]}}}
+    if isinstance(m := request.get("mcp"), dict): config["mcpServers"].update(m)
     save(folder / "mcp.json", config)
     with state_file(connection) as state:
         if live(state.get("pid")) and not state.get("closed"):
