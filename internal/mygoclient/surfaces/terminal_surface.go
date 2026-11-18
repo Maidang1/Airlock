@@ -266,15 +266,15 @@ func OpenTerminalSession(ctx context.Context, client *core.ControllerClient, id 
 		DarkTheme:    darkTheme,
 		CopyOnSelect: terminal.CopyOnSelectClipboard,
 		OpenLink: func(link string) bool {
-			if IsClaudeAuthURL(link) {
-				go func() { _ = sess.OpenLoginURL(context.Background(), link) }()
-				return true
+			if !IsTerminalBrowserURL(link) {
+				return false
 			}
-			if openExternal != nil && (strings.HasPrefix(link, "https://") || strings.HasPrefix(link, "http://")) {
-				openExternal(link)
-				return true
-			}
-			return false
+			go func() {
+				if err := sess.OpenInBrowser(context.Background(), link); err == nil && openExternal != nil {
+					openExternal(link)
+				}
+			}()
+			return true
 		},
 		OnPaste: func(d transfer.Data) bool {
 			return sess.handlePaste(d)
@@ -406,6 +406,39 @@ func (s *TerminalSession) ClearError() {
 	s.mu.Lock()
 	s.lastErr = ""
 	s.mu.Unlock()
+}
+
+func IsTerminalBrowserURL(raw string) bool {
+	if len(raw) == 0 || len(raw) > 8192 || strings.ContainsAny(raw, "\r\n\t\x00") {
+		return false
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+	scheme := strings.ToLower(u.Scheme)
+	return (scheme == "http" || scheme == "https") && u.Host != ""
+}
+
+func (s *TerminalSession) OpenInBrowser(ctx context.Context, rawURL string) error {
+	if !IsTerminalBrowserURL(rawURL) {
+		return nil
+	}
+	if IsClaudeAuthURL(rawURL) {
+		return s.OpenLoginURL(ctx, rawURL)
+	}
+	if err := s.client.PostJSON(ctx, "/api/browser/new", map[string]string{
+		"url": rawURL,
+	}, nil); err != nil {
+		s.mu.Lock()
+		s.lastErr = err.Error()
+		s.mu.Unlock()
+		if s.invalidate != nil {
+			s.invalidate()
+		}
+		return err
+	}
+	return nil
 }
 
 func (s *TerminalSession) OpenLoginURL(ctx context.Context, rawURL string) error {

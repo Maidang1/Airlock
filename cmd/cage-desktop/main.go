@@ -148,8 +148,12 @@ func main() {
 		}
 	}
 
-	termMgr := surfaces.NewTerminalManager(client, func(u string) {
-		_ = mygo.Shell.OpenExternal(u)
+	var rootView *views.RootView
+	termMgr := surfaces.NewTerminalManager(client, func(string) {
+		if rootView != nil {
+			rootView.SelectNav(views.NavBrowser)
+		}
+		store.TriggerRefresh()
 	}, invalidate)
 	macBrowser := surfaces.NewMacOSWindowSurface(client, true, invalidate)
 	macClaude := surfaces.NewMacOSWindowSurface(client, false, invalidate)
@@ -186,7 +190,7 @@ func main() {
 	mygo.BindAs("VNCBridge", vncBridge)
 
 	agentLoop := core.NewAgentNativeLoop(client, store, clipSync, bridge)
-	rootView := views.NewRootView(
+	rootView = views.NewRootView(
 		store,
 		bridge,
 		audioStream,

@@ -1,10 +1,15 @@
 package surfaces
 
 import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/egoist/mygo/ui"
+	"github.com/sylvinus/agent-vm/internal/mygoclient/core"
 )
 
 func TestClaudeAuthURLExtractionAndValidation(t *testing.T) {
@@ -116,5 +121,59 @@ func TestTranslateUIKey(t *testing.T) {
 	code, key = TranslateUIKey(ui.CodeUnknown, ui.KeyUp)
 	if code != "ArrowUp" || key != "ArrowUp" {
 		t.Fatalf("expected fallback ArrowUp, got %q/%q", code, key)
+	}
+}
+
+func TestTerminalBrowserURLAndOpenInBrowser(t *testing.T) {
+	codexURL := "https://auth.openai.com/oauth/authorize?response_type=code&redirect_uri=http%3A%2F%2F127.0.0.1%3A1455%2Fauth%2Fcallback"
+	claudeURL := "https://claude.ai/oauth/authorize?client_id=abc&state=123"
+	for _, valid := range []string{codexURL, claudeURL, "http://127.0.0.1:3000/login"} {
+		if !IsTerminalBrowserURL(valid) {
+			t.Fatalf("expected valid terminal URL %q", valid)
+		}
+	}
+	for _, invalid := range []string{"", "file:///etc/passwd", "javascript:alert(1)", "https://", "https://example.com/\n"} {
+		if IsTerminalBrowserURL(invalid) {
+			t.Fatalf("expected invalid terminal URL %q", invalid)
+		}
+	}
+
+	var calls []string
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/session":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"ok":true}`))
+		case "/api/browser/new", "/api/terminals/term-1/login-link":
+			var body map[string]string
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			calls = append(calls, r.URL.Path+":"+body["url"])
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"id":"tab-1"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	client := core.NewControllerClient(core.ClientOptions{
+		TestEntryFn: func(context.Context) (core.DesktopResult, error) {
+			return core.DesktopResult{URL: srv.URL + "/?launch=1#tok"}, nil
+		},
+	})
+	if err := client.Bootstrap(context.Background()); err != nil {
+		t.Fatalf("Bootstrap: %v", err)
+	}
+
+	sess := &TerminalSession{id: "term-1", client: client}
+	if err := sess.OpenInBrowser(context.Background(), codexURL); err != nil {
+		t.Fatalf("OpenInBrowser(codex): %v", err)
+	}
+	if err := sess.OpenInBrowser(context.Background(), claudeURL); err != nil {
+		t.Fatalf("OpenInBrowser(claude): %v", err)
+	}
+	if len(calls) != 2 || calls[0] != "/api/browser/new:"+codexURL || calls[1] != "/api/terminals/term-1/login-link:"+claudeURL {
+		t.Fatalf("unexpected browser routing calls: %v", calls)
 	}
 }
