@@ -1,0 +1,54 @@
+# Cage (MyGo macOS Edition)
+
+Cage 为 macOS 提供安全、可控的隔离环境工作台（基于 [MyGo](https://mygo.egoist.dev/) 原生桌面框架重写，保留 **macOS 主机端全套能力**，移除 Windows / Linux 宿主机桌面与安装器代码）。
+
+## 架构概览
+
+- **原生桌面客户端（纯 Go + Objective-C cgo）**：
+  - [`cmd/cage-desktop/`](cmd/cage-desktop/main.go)：MyGo 桌面应用主入口，原生 macOS 菜单栏、单实例锁定、更新生命周期与退出保护，以及 `e2e` UI 自动化挂载点。
+  - [`internal/mygoclient/core/`](internal/mygoclient/core/controller.go)：本地/远程控制器会话认证（`cage desktop --json` + `/api/session` + `X-Cage-Connection`）、状态轮询与 SSE、48kHz PCM 音频流（`mygo/audio`）、双向剪贴板同步及 `/api/agent/native` 原生动作循环。
+  - [`internal/mygoclient/surfaces/`](internal/mygoclient/surfaces/terminal_surface.go)：
+    - Ghostty `libghostty-vt` 原生终端（支持 Claude OAuth 授权链接捕获与拖拽上传）；
+    - macOS 客机原生窗口画布（`ui.Image` + pointer/scroll/keyboard + `ui.TextInputClient` 中文输入法合成）；
+    - Linux 客机 / Cloud SSH 隔离浏览器的轻量 noVNC WebView 画布（`web-surface/`）。
+  - [`internal/mygoclient/views/`](internal/mygoclient/views/workbench_view.go)：原生工作台、账户锁定/创建/Touch ID、初始化向导、代理（Mihomo 订阅/链式路由/测速/连接审计）、安全门控、Claude 多账号额度调度、Tailscale、Cloud SSH 远程主机、密码保险箱/扩展/下载及手机配对二维码管理。
+  - [`internal/macnative/`](internal/macnative/profile.go) & [`cmd/cage-update-installer/`](cmd/cage-update-installer/main.go)：macOS Keychain 快捷解锁（Touch ID / 记住登录 / 试用客机密码）、`NSPasteboard` 剪贴板读写与文件缓存清理、`codesign` 校验及原子 `.app` 更新安装器。
+- **隔离后端与客机能力（复用完整 macOS / Linux / Cloud 后端）**：
+  - Apple Virtualization 隔离 macOS 客机与 Lima Linux 客机（`cmd/cage`）
+  - Cloud SSH 远程 Linux / Windows Server 工作台与轻量客户端（`cmd/cage-client`, `deploy/cloud`, `deploy/relay`, `tools/tailnet`）
+
+## 环境要求
+
+- Apple Silicon macOS (macOS 14+)
+- Xcode / Command Line Tools（用于 Swift / Objective-C 编译及 `codesign`）
+- Go（`GOTOOLCHAIN=auto`，依赖 Go 1.27.4+ 与 `github.com/egoist/mygo v0.9.1`）
+- Node.js 20+（用于构建与校验 `web-surface/` 资源清单）
+- Python 3（用于 `novnc-patch.py` 等辅助脚本）
+
+## 常用开发与构建命令
+
+```bash
+# 1. 运行全量 Go 测试（含 headless MyGo ui.NewTester 交互测试、macnative、workbench 与 tailnet）
+GOTOOLCHAIN=auto make test-go
+
+# 2. 启动桌面开发模式
+GOTOOLCHAIN=auto make dev
+
+# 3. 打包签名完整的 Cage.app / Cage.dmg 与轻量 Cage Client.app
+GOTOOLCHAIN=auto make build-app
+GOTOOLCHAIN=auto make dmg
+GOTOOLCHAIN=auto make build-client
+```
+
+## 验证检查清单
+
+构建完成后可执行以下检查确保虚拟化权限与内嵌资源完整：
+
+```bash
+codesign --verify --deep --strict _output/dist/darwin-arm64/Cage.app
+codesign -d --entitlements :- _output/dist/darwin-arm64/Cage.app/Contents/Resources/cage
+_output/dist/darwin-arm64/Cage.app/Contents/Resources/cage verify-macos-guest
+_output/dist/darwin-arm64/Cage.app/Contents/Resources/cage verify-vm-assets
+_output/dist/darwin-arm64/Cage.app/Contents/Resources/cage verify-web-assets
+codesign --verify --deep --strict "_output/client-dist/darwin-arm64/Cage Client.app"
+```
