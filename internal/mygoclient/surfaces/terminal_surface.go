@@ -510,9 +510,7 @@ func (m *TerminalManager) SetStyle(fontSize int, dark bool) {
 func (m *TerminalManager) Reconcile(summaries []core.TerminalSummary) {
 	live := make(map[string]bool, len(summaries))
 	for _, t := range summaries {
-		if !t.Closed {
-			live[t.ID] = true
-		}
+		live[t.ID] = true
 	}
 	m.mu.Lock()
 	var toClose []*TerminalSession

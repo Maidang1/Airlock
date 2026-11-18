@@ -561,10 +561,8 @@ func (s *Store) refreshSecondary(ctx context.Context, ready, vmRunning bool) {
 	go fetch("/api/favorites", &favs, &hasFavs)
 
 	var (
-		terminalsResp struct {
-			Terminals []TerminalSummary `json:"terminals"`
-		}
-		cliResp struct {
+		terminalsResp []TerminalSummary
+		cliResp       struct {
 			Sessions []CLISessionSummary `json:"sessions"`
 		}
 		claudePanel   ClaudePanelView
@@ -620,7 +618,7 @@ func (s *Store) refreshSecondary(ctx context.Context, ready, vmRunning bool) {
 		s.snapshot.Favorites = favs
 	}
 	if hasTerms {
-		s.snapshot.Terminals = terminalsResp.Terminals
+		s.snapshot.Terminals = terminalsResp
 	}
 	if hasCLI {
 		s.snapshot.CLISessions = cliResp.Sessions
@@ -733,6 +731,53 @@ func (s *Store) consumeSSE(ctx context.Context, resp *http.Response) {
 			}
 			return
 		}
+	}
+}
+
+// UpsertTerminal inserts or updates a terminal summary in the snapshot so UI
+// state can switch to a newly created terminal before the next full poll.
+func (s *Store) UpsertTerminal(term TerminalSummary) {
+	if term.ID == "" {
+		return
+	}
+	s.mu.Lock()
+	replaced := false
+	for i := range s.snapshot.Terminals {
+		if s.snapshot.Terminals[i].ID == term.ID {
+			s.snapshot.Terminals[i] = term
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		s.snapshot.Terminals = append(s.snapshot.Terminals, term)
+	}
+	s.mu.Unlock()
+	s.notify()
+}
+
+// RemoveTerminal removes a terminal summary from the snapshot immediately
+// after closing it, prior to the next background refresh.
+func (s *Store) RemoveTerminal(id string) {
+	if id == "" {
+		return
+	}
+	s.mu.Lock()
+	filtered := s.snapshot.Terminals[:0]
+	changed := false
+	for _, t := range s.snapshot.Terminals {
+		if t.ID == id {
+			changed = true
+			continue
+		}
+		filtered = append(filtered, t)
+	}
+	if changed {
+		s.snapshot.Terminals = append([]TerminalSummary(nil), filtered...)
+	}
+	s.mu.Unlock()
+	if changed {
+		s.notify()
 	}
 }
 

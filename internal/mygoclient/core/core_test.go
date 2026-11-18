@@ -497,3 +497,63 @@ func TestHostPortConflictDetectionAndSuggestFreePort(t *testing.T) {
 		t.Fatalf("unexpected SuggestedPort in report: %+v", rep)
 	}
 }
+
+func TestStoreTerminalsArrayDecodingAndLocalMutations(t *testing.T) {
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/session":
+			http.SetCookie(w, &http.Cookie{Name: "cage_session_test", Value: "tok", Path: "/"})
+			_, _ = w.Write([]byte(`{"ok":true}`))
+		case "/api/launch":
+			_ = json.NewEncoder(w).Encode(map[string]string{"url": srv.URL + "/#t1"})
+		case "/api/agent/native/window":
+			_, _ = w.Write([]byte(`{"window_proof":"wp"}`))
+		case "/api/client/context":
+			_ = json.NewEncoder(w).Encode(ClientContext{Mode: "local", ConnectionID: "local"})
+		case "/api/account":
+			_ = json.NewEncoder(w).Encode(AccountView{Exists: true, Unlocked: true, Username: "alice"})
+		case "/api/environment/initialization":
+			_ = json.NewEncoder(w).Encode(InitializationView{Required: false, Prepared: true})
+		case "/api/status":
+			_ = json.NewEncoder(w).Encode(StatusView{Ready: true, VMRunning: true, Workspace: "/proj"})
+		case "/api/terminals":
+			// Controller returns a bare JSON array, not an object wrapper.
+			_ = json.NewEncoder(w).Encode([]TerminalSummary{
+				{ID: "term-1", Title: "终端 1", Workspace: "/proj", Kind: "shell", Closed: false},
+				{ID: "term-2", Title: "终端 2", Workspace: "/proj", Kind: "shell", Closed: true},
+			})
+		default:
+			_, _ = w.Write([]byte(`{}`))
+		}
+	}))
+	defer srv.Close()
+
+	client := NewControllerClient(ClientOptions{
+		ConfigPath: filepath.Join(t.TempDir(), "config.json"),
+		TestEntryFn: func(ctx context.Context) (DesktopResult, error) {
+			return DesktopResult{Status: "ready", URL: srv.URL + "/#t1"}, nil
+		},
+	})
+	store := NewStore(client)
+	defer store.Stop()
+	if err := store.BootstrapAndRefresh(context.Background()); err != nil {
+		t.Fatalf("BootstrapAndRefresh: %v", err)
+	}
+
+	got := store.Snapshot().Terminals
+	if len(got) != 2 || got[0].ID != "term-1" || got[1].ID != "term-2" || !got[1].Closed {
+		t.Fatalf("expected 2 decoded terminals from array response, got %+v", got)
+	}
+
+	store.UpsertTerminal(TerminalSummary{ID: "term-3", Title: "终端 3", Workspace: "/proj", Kind: "shell"})
+	if len(store.Snapshot().Terminals) != 3 {
+		t.Fatalf("expected 3 terminals after UpsertTerminal, got %+v", store.Snapshot().Terminals)
+	}
+	store.RemoveTerminal("term-2")
+	afterRemove := store.Snapshot().Terminals
+	if len(afterRemove) != 2 || afterRemove[0].ID != "term-1" || afterRemove[1].ID != "term-3" {
+		t.Fatalf("unexpected terminals after RemoveTerminal: %+v", afterRemove)
+	}
+}

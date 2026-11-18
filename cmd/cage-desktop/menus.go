@@ -51,15 +51,15 @@ func installMenus(rv *views.RootView, store *core.Store, bridge *mygoHostBridge,
 			Label: "文件",
 			Submenu: []*mygo.MenuItem{
 				{
-					Label:       "新建 Claude Code 终端",
-					Accelerator: "CmdOrCtrl+T",
+					Label:       "新建 Claude 终端",
+					Accelerator: "CmdOrCtrl+N",
 					Click: func(_ *mygo.MenuItem, _ *mygo.Window) {
 						rv.CreateTerminal("claude")
 					},
 				},
 				{
-					Label:       "新建 Shell 终端",
-					Accelerator: "CmdOrCtrl+Shift+T",
+					Label:       "新建 CLI",
+					Accelerator: "CmdOrCtrl+T",
 					Click: func(_ *mygo.MenuItem, _ *mygo.Window) {
 						rv.CreateTerminal("shell")
 					},
@@ -92,7 +92,7 @@ func installMenus(rv *views.RootView, store *core.Store, bridge *mygoHostBridge,
 			Label: "工作区",
 			Submenu: []*mygo.MenuItem{
 				{
-					Label:       "终端与 Claude",
+					Label:       "项目主页与终端",
 					Accelerator: "CmdOrCtrl+1",
 					Click:       func(_ *mygo.MenuItem, _ *mygo.Window) { rv.SelectNav(views.NavTerminal) },
 				},
@@ -102,18 +102,13 @@ func installMenus(rv *views.RootView, store *core.Store, bridge *mygoHostBridge,
 					Click:       func(_ *mygo.MenuItem, _ *mygo.Window) { rv.SelectNav(views.NavBrowser) },
 				},
 				{
-					Label:       "Claude Desktop",
-					Accelerator: "CmdOrCtrl+3",
-					Click:       func(_ *mygo.MenuItem, _ *mygo.Window) { rv.SelectNav(views.NavClaudeDesktop) },
-				},
-				{
 					Label:       "网络代理",
-					Accelerator: "CmdOrCtrl+4",
+					Accelerator: "CmdOrCtrl+3",
 					Click:       func(_ *mygo.MenuItem, _ *mygo.Window) { rv.SelectNav(views.NavProxy) },
 				},
 				{
 					Label:       "安全检查",
-					Accelerator: "CmdOrCtrl+5",
+					Accelerator: "CmdOrCtrl+4",
 					Click:       func(_ *mygo.MenuItem, _ *mygo.Window) { rv.SelectNav(views.NavSafety) },
 				},
 				mygo.Separator(),

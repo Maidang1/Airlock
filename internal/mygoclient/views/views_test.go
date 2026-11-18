@@ -8,11 +8,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/egoist/mygo/ui"
+	"github.com/sylvinus/agent-vm/internal/managedproxy"
 	"github.com/sylvinus/agent-vm/internal/mygoclient/core"
 	"github.com/sylvinus/agent-vm/internal/mygoclient/surfaces"
 )
@@ -44,6 +46,8 @@ type mockWorkbenchState struct {
 	proxyPort           int
 	safetyChecks        int
 	calledPaths         []string
+	terminals           []core.TerminalSummary
+	nextTermSeq         int
 }
 
 func newMockWorkbench(t *testing.T, initial *mockWorkbenchState) (*httptest.Server, *RootView, *ui.Tester) {
@@ -265,7 +269,32 @@ func newMockWorkbench(t *testing.T, initial *mockWorkbenchState) (*httptest.Serv
 				Items: []core.Favorite{{ID: "f1", Title: "Anthropic", URL: "https://anthropic.com"}},
 			})
 		case "/api/terminals":
-			_ = json.NewEncoder(w).Encode(map[string]any{"terminals": []core.TerminalSummary{}})
+			if r.Method == http.MethodPost {
+				var in struct {
+					Workspace string `json:"workspace"`
+					Kind      string `json:"kind"`
+				}
+				_ = json.NewDecoder(r.Body).Decode(&in)
+				initial.mu.Lock()
+				initial.nextTermSeq++
+				term := core.TerminalSummary{
+					ID:        fmt.Sprintf("term-%d", initial.nextTermSeq),
+					Title:     fmt.Sprintf("终端 %d", initial.nextTermSeq),
+					Workspace: in.Workspace,
+					Kind:      in.Kind,
+				}
+				initial.terminals = append(initial.terminals, term)
+				initial.mu.Unlock()
+				_ = json.NewEncoder(w).Encode(term)
+				return
+			}
+			initial.mu.Lock()
+			terms := append([]core.TerminalSummary(nil), initial.terminals...)
+			initial.mu.Unlock()
+			if terms == nil {
+				terms = []core.TerminalSummary{}
+			}
+			_ = json.NewEncoder(w).Encode(terms)
 		case "/api/cli/sessions":
 			_ = json.NewEncoder(w).Encode(map[string]any{"sessions": []core.CLISessionSummary{}})
 		case "/api/claude-accounts":
@@ -291,6 +320,20 @@ func newMockWorkbench(t *testing.T, initial *mockWorkbenchState) (*httptest.Serv
 				Entries: []core.VaultEntry{{ID: "v1", Origin: "https://github.com", Username: "alice"}},
 			})
 		default:
+			if strings.HasPrefix(r.URL.Path, "/api/terminals/") && r.Method == http.MethodDelete {
+				id := strings.TrimPrefix(r.URL.Path, "/api/terminals/")
+				initial.mu.Lock()
+				filtered := initial.terminals[:0]
+				for _, t := range initial.terminals {
+					if t.ID != id {
+						filtered = append(filtered, t)
+					}
+				}
+				initial.terminals = filtered
+				initial.mu.Unlock()
+				_, _ = w.Write([]byte(`{"ok":true}`))
+				return
+			}
 			_, _ = w.Write([]byte(`{"ok":true}`))
 		}
 	}))
@@ -369,7 +412,7 @@ func TestAccountUnlockAndCreateFlowUI(t *testing.T) {
 	if err := tester1.Click("继续进入 Cage"); err != nil {
 		t.Fatalf("click continue failed: %v", err)
 	}
-	waitTester(t, tester1, func() bool { return tester1.HasText("终端与 Claude") }, "workbench after create")
+	waitTester(t, tester1, func() bool { return tester1.HasText("新建 Claude 终端") && tester1.HasText("新建 CLI") }, "workbench after create")
 	_ = rv1
 
 	// 2. Password unlock flow -> Workbench
@@ -402,7 +445,7 @@ func TestOnboardingCompletionFlowUI(t *testing.T) {
 	if err := tester.Click("完成初始化并进入工作台"); err != nil {
 		t.Fatalf("click complete onboarding: %v", err)
 	}
-	waitTester(t, tester, func() bool { return tester.HasText("终端与 Claude Code") }, "workbench after onboarding")
+	waitTester(t, tester, func() bool { return tester.HasText("新建 Claude 终端") && tester.HasText("新建 CLI") }, "workbench after onboarding")
 }
 
 func TestWorkbenchNavigationAndMutationsUI(t *testing.T) {
@@ -424,11 +467,10 @@ func TestWorkbenchNavigationAndMutationsUI(t *testing.T) {
 		nav  string
 		text string
 	}{
-		{NavTerminal, "暂无打开的终端"},
+		{NavTerminal, "新建 Claude 终端"},
 		{NavBrowser, "隔离浏览器尚未启动"},
-		{NavClaudeDesktop, "Claude Desktop"},
 		{NavProxy, "内置代理与节点路由（Mihomo）"},
-		{NavSafety, "隔离网络与安全检查"},
+		{NavSafety, "环境外出站约束"},
 		{NavClaudeAccounts, "工作主号"},
 		{NavTailscale, "Tailscale 私网组网"},
 		{NavRemoteHosts, "Cloud Linux"},
@@ -438,7 +480,24 @@ func TestWorkbenchNavigationAndMutationsUI(t *testing.T) {
 	for _, tc := range checks {
 		rv.SelectNav(tc.nav)
 		waitTester(t, tester, func() bool { return tester.HasText(tc.text) }, tc.nav+" text "+tc.text)
+		if tc.nav == NavSafety && (!tester.HasText("全部安全检测项") || !tester.HasText("UDP 出站约束")) {
+			t.Fatalf("expected full safety check list, got %v", tester.Texts())
+		}
 	}
+
+	// Verify Settings sidebar -> 返回主页 returns to previous non-settings view (NavBrowser),
+	// and clicking the project row in the sidebar returns to Project Home.
+	if !tester.HasText("Cage 设置") || !tester.HasText("返回主页") {
+		t.Fatalf("expected Settings sidebar with 返回主页, got %v", tester.Texts())
+	}
+	if err := tester.Click("返回主页"); err != nil {
+		t.Fatalf("click 返回主页: %v", err)
+	}
+	waitTester(t, tester, func() bool { return tester.HasText("隔离浏览器尚未启动") && tester.HasText("项目") }, "return from settings to browser")
+	if err := tester.Click("demo"); err != nil {
+		t.Fatalf("click project demo in sidebar: %v", err)
+	}
+	waitTester(t, tester, func() bool { return tester.HasText("新建 CLI") && tester.HasText("新建 Claude 终端") }, "open project home from sidebar")
 
 	// Interactive Proxy mutation: select second node "Singapore 02"
 	rv.SelectNav(NavProxy)
@@ -524,7 +583,7 @@ func TestMacOSCredentialsGateAndTrustedLoginUI(t *testing.T) {
 		proxySelected:  "node-a",
 	}
 	_, _, tester3 := newMockWorkbench(t, stResume)
-	waitTester(t, tester3, func() bool { return tester3.HasText("终端与 Claude") }, "auto-resume trusted login to workbench")
+	waitTester(t, tester3, func() bool { return tester3.HasText("新建 Claude 终端") && tester3.HasText("新建 CLI") }, "auto-resume trusted login to workbench")
 	stResume.mu.Lock()
 	resumeActions := append([]string(nil), stResume.trustedLoginActions...)
 	stResume.mu.Unlock()
@@ -585,4 +644,97 @@ func TestPortConflictDetectionAndCustomPortFlowUI(t *testing.T) {
 	waitTester(t, tester, func() bool {
 		return tester.HasText("端口配置与宿主机冲突检测") && tester.HasText("Cage 本机回环服务端口")
 	}, "settings port conflict tab content")
+}
+
+func TestSingleNodeYAMLBuilderCompatibleWithCore(t *testing.T) {
+	forms := []proxyNodeForm{
+		{
+			proto:       "vless",
+			name:        "JP-VLESS",
+			server:      "jp.example.com",
+			port:        "443",
+			uuid:        "11111111-1111-1111-1111-111111111111",
+			network:     "ws",
+			wsPath:      "/ws",
+			wsHost:      "cdn.example.com",
+			sni:         "jp.example.com",
+			fingerprint: "chrome",
+			tls:         true,
+		},
+		{
+			proto:       "hysteria2",
+			name:        "US-Hy2",
+			server:      "us.example.com",
+			port:        "443",
+			ports:       "20000-30000",
+			password:    "secret-hy2",
+			upMbps:      "100",
+			downMbps:    "200",
+			sni:         "us.example.com",
+			fingerprint: "sha256",
+		},
+		{
+			proto:      "ssh",
+			name:       "Bastion-SSH",
+			server:     "10.0.0.10",
+			port:       "22",
+			username:   "ubuntu",
+			privateKey: "-----BEGIN OPENSSH PRIVATE KEY-----\ntest\n-----END OPENSSH PRIVATE KEY-----",
+		},
+	}
+	for _, f := range forms {
+		yamlText, srcName, err := buildSingleNodeYAML(f)
+		if err != nil {
+			t.Fatalf("buildSingleNodeYAML(%s): %v", f.proto, err)
+		}
+		if srcName == "" {
+			t.Fatalf("expected non-empty sourceName for %s", f.proto)
+		}
+		nodes, err := managedproxy.Parse([]byte(yamlText), "test-src")
+		if err != nil {
+			t.Fatalf("managedproxy.Parse(%s) failed: %v\nYAML:\n%s", f.proto, err, yamlText)
+		}
+		if len(nodes) != 1 || nodes[0].Type != f.proto || nodes[0].Name != f.name {
+			t.Fatalf("unexpected parsed node for %s: %+v", f.proto, nodes)
+		}
+	}
+}
+
+func TestCreateAndCloseTerminalFlowUI(t *testing.T) {
+	st := &mockWorkbenchState{
+		accountExists: true,
+		unlocked:      true,
+		initRequired:  false,
+		proxySelected: "node-a",
+		terminals: []core.TerminalSummary{
+			{ID: "term-ended", Title: "终端 0", Workspace: "/Users/alice/projects/demo", Kind: "shell", Closed: true},
+		},
+	}
+	_, rv, tester := newMockWorkbench(t, st)
+	waitTester(t, tester, func() bool {
+		return tester.HasText("新建 CLI") && tester.HasText("终端 0（已结束）") && tester.HasText("已结束")
+	}, "initial workbench with ended terminal visible in sidebar and home")
+
+	if err := tester.Click("新建 CLI"); err != nil {
+		t.Fatalf("click 新建 CLI: %v", err)
+	}
+	waitTester(t, tester, func() bool {
+		rv.mu.Lock()
+		activeID := rv.activeTermID
+		nav := rv.activeNav
+		rv.mu.Unlock()
+		return nav == NavTerminal && activeID == "term-1" && tester.HasText("终端 1")
+	}, "newly created CLI terminal becomes active and appears in sidebar")
+
+	// Return to project home and close the ended terminal to free its slot.
+	if err := tester.Click("demo"); err != nil {
+		t.Fatalf("click project home: %v", err)
+	}
+	waitTester(t, tester, func() bool { return tester.HasText("当前项目会话 (2)") }, "project home lists both running and ended terminals")
+	if err := tester.Click("关闭"); err != nil {
+		t.Fatalf("click 关闭 on ended terminal: %v", err)
+	}
+	waitTester(t, tester, func() bool {
+		return !tester.HasText("终端 0（已结束）") && tester.HasText("当前项目会话 (1)")
+	}, "ended terminal removed after closing")
 }

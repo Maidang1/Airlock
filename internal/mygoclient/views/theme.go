@@ -55,48 +55,48 @@ func PaletteFor(c *ui.Context) Palette {
 	if dark {
 		return Palette{
 			Dark:        true,
-			Bg:          ui.Hex("#1e1e1e"),
-			SubtleBg:    ui.Hex("#19191b"),
-			SidebarBg:   ui.Hex("#232326"),
-			CardBg:      ui.Hex("#28282c"),
-			ElevatedBg:  ui.Hex("#323237"),
-			HoverBg:     ui.RGBA(255, 255, 255, 0.06),
-			ActiveNavBg: ui.RGBA(255, 255, 255, 0.11),
-			Border:      ui.RGBA(255, 255, 255, 0.09),
-			Text:        ui.Hex("#f5f5f7"),
-			Muted:       ui.Hex("#98989d"),
-			SubtleText:  ui.Hex("#636366"),
+			Bg:          ui.Hex("#161618"),
+			SubtleBg:    ui.Hex("#121214"),
+			SidebarBg:   ui.Hex("#1c1c1f"),
+			CardBg:      ui.Hex("#202024"),
+			ElevatedBg:  ui.Hex("#2a2a2f"),
+			HoverBg:     ui.RGBA(255, 255, 255, 0.055),
+			ActiveNavBg: ui.RGBA(255, 255, 255, 0.10),
+			Border:      ui.RGBA(255, 255, 255, 0.075),
+			Text:        ui.Hex("#f4f4f6"),
+			Muted:       ui.Hex("#96969c"),
+			SubtleText:  ui.Hex("#66666c"),
 			Accent:      ui.Hex("#0a84ff"),
-			AccentSoft:  ui.RGBA(10, 132, 255, 0.16),
+			AccentSoft:  ui.RGBA(10, 132, 255, 0.15),
 			Success:     ui.Hex("#30d158"),
-			SuccessSoft: ui.RGBA(48, 209, 88, 0.16),
+			SuccessSoft: ui.RGBA(48, 209, 88, 0.15),
 			Warning:     ui.Hex("#ff9f0a"),
-			WarningSoft: ui.RGBA(255, 159, 10, 0.16),
+			WarningSoft: ui.RGBA(255, 159, 10, 0.15),
 			Danger:      ui.Hex("#ff453a"),
-			DangerSoft:  ui.RGBA(255, 69, 58, 0.16),
+			DangerSoft:  ui.RGBA(255, 69, 58, 0.15),
 		}
 	}
 	return Palette{
 		Dark:        false,
-		Bg:          ui.Hex("#f5f5f7"),
-		SubtleBg:    ui.Hex("#efeff4"),
-		SidebarBg:   ui.Hex("#ebebf0"),
+		Bg:          ui.Hex("#f7f7f9"),
+		SubtleBg:    ui.Hex("#f0f0f4"),
+		SidebarBg:   ui.Hex("#ededf2"),
 		CardBg:      ui.Hex("#ffffff"),
-		ElevatedBg:  ui.Hex("#f2f2f7"),
+		ElevatedBg:  ui.Hex("#f2f2f6"),
 		HoverBg:     ui.RGBA(0, 0, 0, 0.045),
 		ActiveNavBg: ui.RGBA(0, 0, 0, 0.075),
-		Border:      ui.RGBA(0, 0, 0, 0.085),
+		Border:      ui.RGBA(0, 0, 0, 0.075),
 		Text:        ui.Hex("#1d1d1f"),
 		Muted:       ui.Hex("#6e6e73"),
 		SubtleText:  ui.Hex("#8e8e93"),
 		Accent:      ui.Hex("#007aff"),
-		AccentSoft:  ui.RGBA(0, 122, 255, 0.12),
+		AccentSoft:  ui.RGBA(0, 122, 255, 0.11),
 		Success:     ui.Hex("#34c759"),
-		SuccessSoft: ui.RGBA(52, 199, 89, 0.12),
+		SuccessSoft: ui.RGBA(52, 199, 89, 0.11),
 		Warning:     ui.Hex("#ff9500"),
-		WarningSoft: ui.RGBA(255, 149, 0, 0.12),
+		WarningSoft: ui.RGBA(255, 149, 0, 0.11),
 		Danger:      ui.Hex("#ff3b30"),
-		DangerSoft:  ui.RGBA(255, 59, 48, 0.12),
+		DangerSoft:  ui.RGBA(255, 59, 48, 0.11),
 	}
 }
 
@@ -118,9 +118,12 @@ type RootView struct {
 
 	mu               sync.Mutex
 	activeNav        string
+	returnNav        string
+	lastSettingsNav  string
 	sidebarWidth     float32
 	sidebarCollapsed bool
 	activeTermID     string
+	expandedProjects map[string]bool
 	showJobLog       bool
 	maintModal       *macOSMaintenanceModal
 
@@ -160,24 +163,27 @@ func NewRootView(
 	client := store.Client()
 	snap := store.Snapshot()
 	w := snap.ClientPrefs.SidebarWidth
-	if w < 184 || w > 360 {
-		w = 218
+	if w < 200 || w > 360 {
+		w = 252
 	}
 	rv := &RootView{
-		Store:        store,
-		Client:       client,
-		Bridge:       bridge,
-		Audio:        audio,
-		Clipboard:    clip,
-		Devices:      core.NewAccountDeviceService(client),
-		Terminals:    termMgr,
-		MacBrowser:   macBrowser,
-		MacClaude:    macClaude,
-		VNC:          vncMgr,
-		VNCBridge:    vncBridge,
-		Invalidate:   invalidate,
-		activeNav:    NavTerminal,
-		sidebarWidth: w,
+		Store:            store,
+		Client:           client,
+		Bridge:           bridge,
+		Audio:            audio,
+		Clipboard:        clip,
+		Devices:          core.NewAccountDeviceService(client),
+		Terminals:        termMgr,
+		MacBrowser:       macBrowser,
+		MacClaude:        macClaude,
+		VNC:              vncMgr,
+		VNCBridge:        vncBridge,
+		Invalidate:       invalidate,
+		activeNav:        NavTerminal,
+		returnNav:        NavTerminal,
+		lastSettingsNav:  NavProxy,
+		expandedProjects: map[string]bool{},
+		sidebarWidth:     w,
 	}
 	rv.proxy.portStr = "7890"
 	rv.proxy.intervalStr = "24"
@@ -207,10 +213,71 @@ func (r *RootView) PushToast(msg string) {
 	}
 }
 
+// IsSettingsNav reports whether nav belongs to the unified Settings interface.
+func IsSettingsNav(nav string) bool {
+	switch nav {
+	case NavProxy, NavSafety, NavTailscale, NavRemoteHosts, NavClaudeAccounts, NavBrowserMgmt, NavSettings:
+		return true
+	default:
+		return false
+	}
+}
+
 func (r *RootView) SelectNav(section string) {
+	if section == NavClaudeDesktop {
+		section = NavTerminal
+	}
 	r.mu.Lock()
+	if !IsSettingsNav(r.activeNav) && IsSettingsNav(section) {
+		r.returnNav = r.activeNav
+	}
+	if IsSettingsNav(section) {
+		r.lastSettingsNav = section
+	}
 	r.activeNav = section
 	r.mu.Unlock()
+	if r.Invalidate != nil {
+		r.Invalidate()
+	}
+}
+
+func (r *RootView) OpenSettings() {
+	r.mu.Lock()
+	target := r.lastSettingsNav
+	if target == "" {
+		target = NavProxy
+	}
+	if !IsSettingsNav(r.activeNav) {
+		r.returnNav = r.activeNav
+	}
+	r.activeNav = target
+	r.mu.Unlock()
+	if r.Invalidate != nil {
+		r.Invalidate()
+	}
+}
+
+func (r *RootView) CloseSettings() {
+	r.mu.Lock()
+	ret := r.returnNav
+	if ret == "" || IsSettingsNav(ret) {
+		ret = NavTerminal
+	}
+	r.activeNav = ret
+	r.mu.Unlock()
+	if r.Invalidate != nil {
+		r.Invalidate()
+	}
+}
+
+func (r *RootView) SelectProjectHome(workspace string) {
+	r.mu.Lock()
+	r.activeTermID = ""
+	r.activeNav = NavTerminal
+	r.mu.Unlock()
+	if workspace != "" && workspace != r.Store.Snapshot().Status.Workspace {
+		go r.activateProject(workspace, false)
+	}
 	if r.Invalidate != nil {
 		r.Invalidate()
 	}
