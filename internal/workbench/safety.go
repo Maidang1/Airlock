@@ -637,6 +637,9 @@ func (s *Server) checkExitPolicy(ctx context.Context, cfg cage.Config, ip string
 }
 
 func (s *Server) runSafetyCheck() (returned error) {
+	if s.microGuest != nil {
+		return s.checkMicroVMNetwork()
+	}
 	defer func() {
 		s.mu.Lock()
 		defer s.mu.Unlock()
@@ -1095,6 +1098,10 @@ func (s *Server) networkMonitorBlockedLocked() bool {
 }
 
 func (s *Server) monitorSafety() {
+	if s.microGuest != nil {
+		s.monitorMicroVMNetwork()
+		return
+	}
 	s.monitorSafetyWithProbe(cage.ProbeExitIP)
 }
 

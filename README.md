@@ -40,6 +40,31 @@ GOTOOLCHAIN=auto make dmg
 GOTOOLCHAIN=auto make build-client
 ```
 
+### 使用本地 MicroVM 镜像开发
+
+```bash
+# 首次准备镜像，或修改 airlock-init / 镜像依赖后重新构建（需要 Docker）
+make microvm-image
+
+# 已有 _output/microvm-image 时，直接启动原生 App 开发模式
+make dev-microvm
+```
+
+`dev-microvm` 使用 Apple Virtualization 直接加载 `vmlinuz`、`initrd.img`、`rootfs.img` 和 `data.img`，打开独立的 MicroVM 开发版 App。首次使用先在 App 中创建本地账户，再点击“启动环境”；在工作台左上角“添加项目”中选择共享目录。镜像构建不接收项目路径，也不需要 `--project /path/to/your/project`。
+
+镜像默认安装 Node.js 22、npm 和 Claude Code。运行配置保存在 `~/.claude-cage-microvm-dev/`，每个配置使用自己的可写数据盘；用户主目录中的文件和登录状态随数据盘保留。未配置代理时可使用离线终端和目录共享，外网需配置代理并通过现有检查后开启。
+
+```bash
+# 可选：使用另一套镜像或独立开发配置
+AIRLOCK_MICROVM_IMAGE_DIR=/absolute/path/to/microvm-image \
+AIRLOCK_MICROVM_CONFIG="$HOME/.airlock-another-dev/config.json" \
+make dev-microvm
+```
+
+MyGo 会监听 App 源码变化。修改后台 `cmd/cage` / `internal/workbench` 后，先在 App 中停止环境，退出开发命令，再运行 `make dev-microvm` 以重建后台。修改客机 init 后还需重新运行 `make microvm-image`；重建镜像前应停止使用该镜像的 VM。
+
+当前 MicroVM 开发入口支持普通/Claude 终端、运行时项目共享、基础浏览器和 VNC。托管 Claude 多账号会话、浏览器扩展/保险箱/下载管理等高级功能尚未接入。
+
 ## 验证检查清单
 
 构建完成后可执行以下检查确保虚拟化权限与内嵌资源完整：

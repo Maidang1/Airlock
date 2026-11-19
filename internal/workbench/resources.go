@@ -13,6 +13,9 @@ import (
 )
 
 func (s *Server) instanceDir() string {
+	if s.microGuest != nil {
+		return filepath.Join(s.profile, "state", "microvm")
+	}
 	if s.windowsGuest != nil {
 		// The profile owns storage paths, while the server retains the bound
 		// VM/user identity across a migration. Relay calls load this file too.
@@ -31,6 +34,10 @@ func (s *Server) instanceDir() string {
 }
 
 func (s *Server) resourceStatus(w http.ResponseWriter, r *http.Request) {
+	if s.microGuest != nil {
+		s.microVMResourceStatus(w, r)
+		return
+	}
 	if s.windowsGuest != nil {
 		s.windowsResourceStatus(w, r)
 		return

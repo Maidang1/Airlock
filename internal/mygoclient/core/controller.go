@@ -164,6 +164,18 @@ func (c *ControllerClient) ResolveExecutable() (string, error) {
 	}
 	c.mu.RUnlock()
 
+	if override := os.Getenv("CAGE_HELPER_BIN"); c.opts.Executable == "" && override != "" {
+		absolute, err := filepath.Abs(override)
+		if err == nil {
+			if info, err := os.Stat(absolute); err == nil && info.Mode().IsRegular() {
+				c.mu.Lock()
+				c.exe = absolute
+				c.mu.Unlock()
+				return absolute, nil
+			}
+		}
+		return "", fmt.Errorf("未找到指定的后端程序：%s", override)
+	}
 	if c.opts.Executable != "" {
 		if _, err := os.Stat(c.opts.Executable); err == nil {
 			c.mu.Lock()

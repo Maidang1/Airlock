@@ -86,6 +86,11 @@ func (c Config) CheckRunning(state string) error {
 		return err
 	}
 	files = append(files, containerRecords...)
+	if _, err := os.Stat(filepath.Join(state, "microvm", "cage-running.json")); err == nil {
+		files = append(files, filepath.Join(state, "microvm", "cage-running.json"))
+	} else if !os.IsNotExist(err) {
+		return err
+	}
 	for _, file := range files {
 		b, err := os.ReadFile(file)
 		if err != nil {

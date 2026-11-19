@@ -72,6 +72,10 @@ func (s *Server) remoteManifest(w http.ResponseWriter, r *http.Request) {
 			Runtime: "lima", Origin: s.origin, Capabilities: map[string]bool{"terminal": true, "projects_browse": true}})
 		return
 	}
+	if s.microGuest != nil {
+		jsonReply(w, RemoteEntry{APIProtocol: remoteAPIProtocol, InstanceID: s.instanceID, Version: version.Version, Platform: runtime.GOOS, Runtime: "microvm", Origin: s.origin, Capabilities: map[string]bool{"projects_browse": true, "terminal": true, "browser": true}})
+		return
+	}
 	kind := "lima"
 	if _, err := os.Stat(filepath.Join(s.profile, "container.json")); err == nil {
 		kind = "container"

@@ -43,6 +43,9 @@ type guestInstallView struct {
 }
 
 func (s *Server) guestInstallView() (guestInstallView, error) {
+	if s.microGuest != nil {
+		return guestInstallView{System: "microvm"}, nil
+	}
 	v := guestInstallView{}
 	if !s.localVMStorage() || s.macosGuest != nil || s.windowsGuest != nil {
 		return v, nil

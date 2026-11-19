@@ -207,6 +207,9 @@ func (s *Server) ensureProjectShare(path string) (returned error) {
 		}
 		s.setProjectError(path, returned)
 	}()
+	if s.microGuest != nil {
+		return s.ensureMicroVMShare(path)
+	}
 	if s.windowsGuest != nil {
 		return s.ensureWindowsProjectShare(path)
 	}

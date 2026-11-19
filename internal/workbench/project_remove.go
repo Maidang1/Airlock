@@ -121,7 +121,7 @@ func (s *Server) checkProjectFoldersIdle(ctx context.Context, folders []string, 
 			return errors.New("请先关闭此项目的终端，再移除项目。会话历史会保留。")
 		}
 	}
-	if ready && sharedCLILauncher(claudeTerminalCommand(preferences)) {
+	if ready && s.microGuest == nil && sharedCLILauncher(claudeTerminalCommand(preferences)) {
 		granted := make(map[string]bool, len(projects))
 		for _, project := range projects {
 			granted[project] = true

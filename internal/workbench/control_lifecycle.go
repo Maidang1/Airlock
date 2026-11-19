@@ -173,6 +173,11 @@ func controllerVMOwners(profile string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	if _, err := os.Stat(filepath.Join(profile, "state", "microvm", "cage-running.json")); err == nil {
+		records = append(records, filepath.Join(profile, "state", "microvm", "cage-running.json"))
+	} else if !os.IsNotExist(err) {
+		return nil, err
+	}
 	var owners []string
 	for _, path := range records {
 		b, err := os.ReadFile(path)

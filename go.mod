@@ -41,6 +41,7 @@ require (
 	github.com/lima-vm/lima/v2 v2.0.0
 	github.com/lima-vm/sshocker v0.3.11
 	github.com/mattn/go-isatty v0.0.24
+	github.com/mdlayher/vsock v1.3.0
 	github.com/miekg/dns v1.1.73
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58
@@ -117,7 +118,6 @@ require (
 	github.com/mattn/go-shellwords v1.0.15 // indirect
 	github.com/mdlayher/netlink v1.11.2 // indirect
 	github.com/mdlayher/socket v0.6.0 // indirect
-	github.com/mdlayher/vsock v1.3.0 // indirect
 	github.com/mgutz/ansi v0.0.0-20170206155736-9520e82c474b // indirect
 	github.com/mikefarah/yq/v4 v4.53.6 // indirect
 	github.com/mitchellh/go-wordwrap v1.0.1 // indirect

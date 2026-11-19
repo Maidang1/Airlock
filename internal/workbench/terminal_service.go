@@ -227,6 +227,9 @@ func (s *Server) createTerminal(input terminalRequest) (*terminalSession, error)
 
 // Caller holds the environment operation lock through PTY publication.
 func (s *Server) createTerminalLocked(input terminalRequest) (*terminalSession, error) {
+	if s.microGuest != nil {
+		return s.createMicroVMTerminal(input)
+	}
 	if s.windowsGuest != nil {
 		return s.createWindowsTerminal(input)
 	}

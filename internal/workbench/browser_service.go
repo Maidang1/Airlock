@@ -83,6 +83,9 @@ func (s *Server) browserClient() *browserClient {
 }
 
 func (s *Server) guestAPI(ctx context.Context, token, method, path string, body []byte) ([]byte, error) {
+	if s.microGuest != nil {
+		return s.microVMBrowserAPI(ctx, method, path, body)
+	}
 	if s.macosGuest != nil || s.windowsGuest != nil {
 		return s.nativeBrowserAPI(ctx, method, path, body)
 	}
@@ -224,6 +227,9 @@ func validInputToken(value string) bool {
 }
 
 func (s *Server) subscribeBrowser(ctx context.Context) (io.ReadCloser, error) {
+	if s.microGuest != nil {
+		return s.subscribeMicroVMBrowser(ctx), nil
+	}
 	s.mu.Lock()
 	ready, token := s.ready, s.credentials.Token
 	s.mu.Unlock()

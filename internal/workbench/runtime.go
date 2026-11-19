@@ -52,6 +52,9 @@ func (s *Server) sshTarget() string {
 }
 
 func (s *Server) environmentPrepared() bool {
+	if s.microGuest != nil {
+		return true
+	}
 	if s.windowsGuest != nil {
 		return true
 	}
@@ -75,6 +78,9 @@ func (s *Server) sshCommandWithForwarding(ctx context.Context, args ...string) *
 	return s.sshCommandOptions(ctx, true, args...)
 }
 func (s *Server) sshCommandOptions(ctx context.Context, maintenance bool, args ...string) *exec.Cmd {
+	if s.microGuest != nil {
+		return &exec.Cmd{Err: errors.New("MicroVM uses vsock; SSH is unavailable")}
+	}
 	if s.windowsGuest != nil {
 		return &exec.Cmd{Err: errors.New("Windows 客机不支持 Linux SSH 控制脚本")}
 	}
@@ -101,6 +107,9 @@ func (s *Server) guest(ctx context.Context, script string) ([]byte, error) {
 }
 
 func (s *Server) guestControl(ctx context.Context, script, diagnosticSource string) ([]byte, error) {
+	if s.microGuest != nil {
+		return s.microVMGuestCommand(ctx, script)
+	}
 	if s.windowsGuest != nil {
 		return nil, errors.New("Windows 客机不支持 Linux 控制脚本")
 	}
@@ -136,6 +145,9 @@ func (s *Server) guestControl(ctx context.Context, script, diagnosticSource stri
 	return data, nil
 }
 func (s *Server) attach() error {
+	if s.microGuest != nil {
+		return s.attachMicroVM()
+	}
 	if err := s.requireStorageReady(); err != nil {
 		return err
 	}
@@ -235,7 +247,7 @@ func (s *Server) monitor(ctx context.Context) {
 				ready := s.ready
 				token := s.credentials.Token
 				s.mu.Unlock()
-				if !ready || s.macosGuest != nil || s.windowsGuest != nil {
+				if !ready || s.macosGuest != nil || s.windowsGuest != nil || s.microGuest != nil {
 					_ = s.attach()
 				} else {
 					ctx, cancel := s.controlContext()
@@ -328,6 +340,9 @@ func (s *Server) runCage(args ...string) error {
 	return nil
 }
 func (s *Server) startEnvironment(syncTimezone bool) error {
+	if s.microGuest != nil {
+		return s.startMicroVM()
+	}
 	s.desktopViews.reset()
 	s.browserViews.reset()
 	s.controlSession.close()
@@ -507,6 +522,9 @@ func (s *Server) startEnvironment(syncTimezone bool) error {
 	return errors.New("环境已启动，但浏览器连接尚未就绪。请重试连接或查看操作详情。")
 }
 func (s *Server) stopEnvironment() (returned error) {
+	if s.microGuest != nil {
+		return s.stopMicroVM()
+	}
 	s.desktopStatus.invalidate()
 	defer s.desktopStatus.invalidate()
 	explicitStop := s.jobs.snapshot().Kind == "stop"
@@ -569,6 +587,9 @@ func (s *Server) apply(v savedProfile, validate bool) error {
 		resumeVersion = execution.pauseVersion
 	}
 	wasReady := vmAlive(s.profile, s.environmentDir())
+	if s.microGuest != nil {
+		wasReady = s.microGuest.running()
+	}
 	if s.windowsGuest != nil {
 		wasReady = s.windowsState.Running
 	} else if s.macosGuest != nil {
@@ -742,6 +763,9 @@ func vmAlive(profile, workspace string) bool {
 	return processExists(record.PID) && cage.ProcessStartMatches(record.PID, record.Started)
 }
 func (s *Server) vmRunning() bool {
+	if s.microGuest != nil {
+		return s.microGuest.running()
+	}
 	if s.windowsGuest != nil {
 		s.mu.Lock()
 		defer s.mu.Unlock()

@@ -42,6 +42,7 @@ type controlFile struct {
 	Controller ControllerIdentity `json:"controller"`
 }
 type Server struct {
+	microGuest                                       *microVMRuntime
 	desktopViews                                     displayViewDemand
 	desktopDisplayUpdate                             func(bool) error
 	browserViews                                     displayViewDemand
@@ -214,6 +215,9 @@ func serve(configPath string, clientOnly bool, fullConfigPath string) (returned 
 	}
 	defer s.remote.close()
 	if workload {
+		if err = s.loadMicroVM(); err != nil {
+			return err
+		}
 		if err = guestos.RecoverWindowsStorage(context.Background(), profile); err != nil {
 			s.failStorageRecovery(err)
 		}
@@ -717,7 +721,10 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 		"location": s.location, "network_error": s.currentNetworkErrorLocked(), "can_restore": e == nil,
 		"safety": s.safety, "environment_update_required": s.guestUpdateRequired, "environment_update_error": s.guestUpdateError,
 	}
-	if s.windowsGuest != nil {
+	if s.microGuest != nil {
+		view["guest_system"] = "microvm"
+		view["guest_capabilities"] = map[string]any{"available": map[string]bool{"terminal": true, "cli": true, "projects": true, "browser": true}}
+	} else if s.windowsGuest != nil {
 		view["guest_system"] = guestos.Windows11
 		if s.windowsGuest.Remote() {
 			view["guest_system"] = "windows-remote"
@@ -834,6 +841,10 @@ func (s *Server) restore(w http.ResponseWriter, r *http.Request) {
 func (s *Server) start(w http.ResponseWriter, r *http.Request) {
 	var input guestInstallRequest
 	if r.ContentLength != 0 && !readJSON(w, r, &input) {
+		return
+	}
+	if s.microGuest != nil {
+		s.launch(w, "start", func() error { return s.startMicroVM() })
 		return
 	}
 	if input.GuestProfile != nil {

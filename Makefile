@@ -20,7 +20,7 @@ TAGS := yq_noxml,yq_nolua,yq_noini,yq_nohcl,yq_notoml,yq_noprops,yq_nocsv,yq_nou
 CGO_ENABLED ?= 1
 GO_BUILD := CGO_ENABLED=$(CGO_ENABLED) $(GO) build -trimpath -tags $(TAGS) -ldflags "$(LDFLAGS)"
 
-.PHONY: all assets tailnet-assets web-surface cage cage-update-installer prepare-resources prepare-resources-fast dev build-app dmg build-client test test-go clean
+.PHONY: dev-microvm all assets tailnet-assets web-surface cage cage-update-installer prepare-resources prepare-resources-fast dev build-app dmg build-client test test-go airlock-init airlock-microvm microvm-image test-microvm clean
 
 all: build-app
 
@@ -59,6 +59,9 @@ prepare-resources:
 prepare-resources-fast:
 	bash scripts/prepare-resources.sh --fast
 
+dev-microvm:
+	bash scripts/dev-microvm.sh
+
 dev: prepare-resources-fast
 	CGO_ENABLED=1 $(GO) tool mygo dev
 
@@ -76,6 +79,19 @@ test: test-go
 test-go: web-surface assets tailnet-assets
 	$(GO) test -tags $(TAGS) . ./cmd/... ./internal/...
 	cd tools/tailnet && GOFLAGS= $(GO) test ./...
+
+airlock-init:
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 $(GO) build -trimpath -ldflags "-s -w" -o _output/bin/airlock-init ./cmd/airlock-init
+
+airlock-microvm:
+	$(GO_BUILD) -o _output/bin/airlock-microvm ./cmd/airlock-microvm
+	codesign -f --entitlements third_party/lima/vz.entitlements -s - _output/bin/airlock-microvm
+
+microvm-image: airlock-init
+	bash scripts/build-microvm-image.sh
+
+test-microvm:
+	$(GO) test -tags $(TAGS) ./internal/microvm/... ./cmd/airlock-init/... ./cmd/airlock-microvm/...
 
 clean:
 	rm -rf _output resources/darwin-arm64 .mygo

@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 
 const version = readFileSync(new URL("./VERSION", import.meta.url), "utf8").trim();
+const microvmDev = process.env.AIRLOCK_MICROVM_DEV === "1";
 const clientOnly = process.env.CAGE_CLIENT_BUILD === "1";
 const macosTrial = process.env.CAGE_MACOS_TRIAL === "1";
 const signingIdentity = process.env.CAGE_SIGNING_IDENTITY || "-";
@@ -22,9 +23,9 @@ if (clientOnly) {
   infoPlist.CageClientOnly = true;
 }
 
-const name = clientOnly ? "Airlock Client" : macosTrial ? "Airlock macOS" : "Airlock";
-const slug = clientOnly ? "airlock-client" : macosTrial ? "airlock-macos" : "airlock";
-const identifier = clientOnly
+const name = microvmDev ? "Airlock MicroVM" : clientOnly ? "Airlock Client" : macosTrial ? "Airlock macOS" : "Airlock";
+const slug = microvmDev ? "airlock-microvm-dev" : clientOnly ? "airlock-client" : macosTrial ? "airlock-macos" : "airlock";
+const identifier = microvmDev ? "io.github.lee-xeo.claude-cage.microvm-dev" : clientOnly
   ? "io.github.lee-xeo.claude-cage-client"
   : macosTrial
     ? "io.github.lee-xeo.claude-cage.macos-trial"
