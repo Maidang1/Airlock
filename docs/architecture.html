@@ -1,0 +1,1600 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Airlock (cage-mygo) — 系统架构与核心实现深度解析</title>
+  <style>
+    :root {
+      --bg: #0b0e14;
+      --bg-elev: #111622;
+      --bg-card: #151b29;
+      --bg-code: #0d111a;
+      --border: #232d42;
+      --border-strong: #32415f;
+      --text: #e6ecf7;
+      --text-muted: #93a2be;
+      --text-dim: #667591;
+
+      --accent-blue: #4ea1ff;
+      --accent-cyan: #2dd4bf;
+      --accent-emerald: #34d399;
+      --accent-amber: #fbbf24;
+      --accent-violet: #a78bfa;
+      --accent-rose: #fb7185;
+
+      --soft-blue: rgba(78, 161, 255, 0.13);
+      --soft-cyan: rgba(45, 212, 191, 0.12);
+      --soft-emerald: rgba(52, 211, 153, 0.12);
+      --soft-amber: rgba(251, 191, 36, 0.13);
+      --soft-violet: rgba(167, 139, 250, 0.14);
+      --soft-rose: rgba(251, 113, 133, 0.13);
+
+      --shadow: 0 12px 32px rgba(0, 0, 0, 0.36);
+      --radius: 14px;
+      --radius-sm: 8px;
+      --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+      --font-mono: "SF Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+
+    [data-theme="light"] {
+      --bg: #f5f7fb;
+      --bg-elev: #ffffff;
+      --bg-card: #ffffff;
+      --bg-code: #f0f3f9;
+      --border: #dde3ef;
+      --border-strong: #bcc7dc;
+      --text: #141c2c;
+      --text-muted: #4b5a76;
+      --text-dim: #73829e;
+
+      --accent-blue: #1d6fe8;
+      --accent-cyan: #0d9488;
+      --accent-emerald: #059669;
+      --accent-amber: #d97706;
+      --accent-violet: #7c3aed;
+      --accent-rose: #e11d48;
+
+      --soft-blue: rgba(29, 111, 232, 0.1);
+      --soft-cyan: rgba(13, 148, 136, 0.1);
+      --soft-emerald: rgba(5, 150, 105, 0.1);
+      --soft-amber: rgba(217, 119, 6, 0.11);
+      --soft-violet: rgba(124, 58, 237, 0.1);
+      --soft-rose: rgba(225, 29, 72, 0.1);
+
+      --shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      font-family: var(--font-sans);
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.65;
+      font-size: 15px;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Layout */
+    .app-shell {
+      display: grid;
+      grid-template-columns: 264px minmax(0, 1fr);
+      min-height: 100vh;
+    }
+
+    /* Sidebar TOC */
+    .sidebar {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+      background: var(--bg-elev);
+      border-right: 1px solid var(--border);
+      padding: 22px 16px 32px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      z-index: 20;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      padding: 4px 6px 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    .brand-icon {
+      width: 34px;
+      height: 34px;
+      border-radius: 9px;
+      background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan));
+      display: grid;
+      place-items: center;
+      color: #fff;
+      font-weight: 800;
+      font-size: 15px;
+      letter-spacing: -0.5px;
+      flex-shrink: 0;
+      box-shadow: 0 4px 12px rgba(78, 161, 255, 0.3);
+    }
+    .brand-title { font-weight: 700; font-size: 15px; line-height: 1.2; }
+    .brand-sub { font-size: 11.5px; color: var(--text-dim); font-family: var(--font-mono); }
+
+    .toc-group-title {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-dim);
+      padding: 0 10px;
+      margin-bottom: 6px;
+      font-weight: 600;
+    }
+    .toc-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .toc-list a {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 7px 10px;
+      border-radius: 8px;
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 13.5px;
+      transition: background 0.15s, color 0.15s;
+    }
+    .toc-list a:hover {
+      background: var(--soft-blue);
+      color: var(--text);
+    }
+    .toc-list a.active {
+      background: var(--soft-blue);
+      color: var(--accent-blue);
+      font-weight: 600;
+    }
+    .toc-num {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--text-dim);
+      width: 18px;
+      flex-shrink: 0;
+    }
+    .toc-list a.active .toc-num { color: var(--accent-blue); }
+
+    .sidebar-footer {
+      margin-top: auto;
+      padding-top: 14px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .theme-btn {
+      width: 100%;
+      padding: 8px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--bg-card);
+      color: var(--text);
+      font-size: 13px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .theme-btn:hover { border-color: var(--accent-blue); }
+
+    /* Main content */
+    .main {
+      max-width: 1180px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 36px 40px 96px;
+    }
+
+    /* Hero */
+    .hero {
+      background:
+        radial-gradient(ellipse 65% 80% at 90% 10%, rgba(78, 161, 255, 0.16), transparent 65%),
+        radial-gradient(ellipse 50% 60% at 15% 100%, rgba(45, 212, 191, 0.11), transparent 60%),
+        var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 32px 34px;
+      margin-bottom: 34px;
+      box-shadow: var(--shadow);
+    }
+    .hero-eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      font-family: var(--font-mono);
+      color: var(--accent-cyan);
+      background: var(--soft-cyan);
+      border: 1px solid rgba(45, 212, 191, 0.25);
+      padding: 4px 10px;
+      border-radius: 999px;
+      margin-bottom: 14px;
+    }
+    .hero h1 {
+      margin: 0 0 10px;
+      font-size: 30px;
+      line-height: 1.22;
+      letter-spacing: -0.02em;
+    }
+    .hero p {
+      margin: 0 0 22px;
+      color: var(--text-muted);
+      max-width: 780px;
+      font-size: 15.5px;
+    }
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(175px, 1fr));
+      gap: 12px;
+    }
+    .kpi {
+      background: var(--bg-elev);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 14px;
+    }
+    .kpi-label { font-size: 11.5px; color: var(--text-dim); margin-bottom: 3px; }
+    .kpi-val { font-size: 15px; font-weight: 700; font-family: var(--font-mono); color: var(--text); }
+    .kpi-sub { font-size: 11.5px; color: var(--text-muted); margin-top: 2px; }
+
+    /* Sections */
+    section {
+      margin-bottom: 48px;
+      scroll-margin-top: 24px;
+    }
+    .sec-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 16px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--border);
+    }
+    .sec-head h2 {
+      margin: 0;
+      font-size: 21px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      letter-spacing: -0.01em;
+    }
+    .sec-badge {
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      padding: 2px 8px;
+      border-radius: 6px;
+      background: var(--soft-blue);
+      color: var(--accent-blue);
+      font-weight: 600;
+    }
+    .sec-desc {
+      color: var(--text-muted);
+      margin: 0 0 18px;
+      font-size: 14.5px;
+    }
+
+    /* Cards & Grids */
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px 22px;
+      box-shadow: var(--shadow);
+    }
+    .grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+
+    /* Interactive Architecture Canvas */
+    .arch-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.55fr) minmax(300px, 0.95fr);
+      gap: 16px;
+      align-items: start;
+    }
+    .svg-wrap {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      overflow-x: auto;
+      box-shadow: var(--shadow);
+    }
+    .svg-wrap svg {
+      width: 100%;
+      height: auto;
+      display: block;
+      min-width: 620px;
+    }
+    .arch-node {
+      cursor: pointer;
+      transition: filter 0.15s, transform 0.15s;
+    }
+    .arch-node:hover rect.node-bg {
+      filter: brightness(1.18);
+      stroke-width: 2;
+    }
+    .arch-node.selected rect.node-bg {
+      stroke-width: 2.5;
+      filter: drop-shadow(0 0 10px rgba(78, 161, 255, 0.45));
+    }
+
+    .inspector {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      position: sticky;
+      top: 20px;
+      box-shadow: var(--shadow);
+    }
+    .inspector-tag {
+      display: inline-block;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      padding: 3px 8px;
+      border-radius: 6px;
+      margin-bottom: 8px;
+      font-weight: 600;
+    }
+    .inspector h3 { margin: 0 0 8px; font-size: 17px; }
+    .inspector p { margin: 0 0 12px; color: var(--text-muted); font-size: 13.8px; }
+    .inspector-list {
+      margin: 0 0 14px;
+      padding-left: 18px;
+      color: var(--text);
+      font-size: 13.5px;
+    }
+    .inspector-list li { margin-bottom: 5px; }
+    .file-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    .chip {
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      background: var(--bg-code);
+      border: 1px solid var(--border);
+      color: var(--accent-cyan);
+      padding: 3px 8px;
+      border-radius: 6px;
+    }
+
+    /* Tabs */
+    .tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+    .tab-btn {
+      padding: 8px 14px;
+      border-radius: 9px;
+      border: 1px solid var(--border);
+      background: var(--bg-card);
+      color: var(--text-muted);
+      font-size: 13.5px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .tab-btn:hover { color: var(--text); border-color: var(--border-strong); }
+    .tab-btn.active {
+      background: var(--soft-blue);
+      border-color: var(--accent-blue);
+      color: var(--accent-blue);
+      font-weight: 600;
+    }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; animation: fadeIn 0.2s ease; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+    /* Code & Protocol blocks */
+    code {
+      font-family: var(--font-mono);
+      font-size: 0.88em;
+      background: var(--bg-code);
+      border: 1px solid var(--border);
+      padding: 1px 5px;
+      border-radius: 5px;
+      color: var(--accent-blue);
+    }
+    pre {
+      margin: 12px 0 0;
+      background: var(--bg-code);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 16px;
+      overflow-x: auto;
+      font-family: var(--font-mono);
+      font-size: 12.5px;
+      line-height: 1.55;
+      color: var(--text);
+    }
+    pre code { background: none; border: none; padding: 0; color: inherit; font-size: inherit; }
+
+    /* Detail cards */
+    .detail-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .detail-card h3 {
+      margin: 0;
+      font-size: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .pill {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .pill-blue { background: var(--soft-blue); color: var(--accent-blue); }
+    .pill-cyan { background: var(--soft-cyan); color: var(--accent-cyan); }
+    .pill-emerald { background: var(--soft-emerald); color: var(--accent-emerald); }
+    .pill-amber { background: var(--soft-amber); color: var(--accent-amber); }
+    .pill-violet { background: var(--soft-violet); color: var(--accent-violet); }
+    .pill-rose { background: var(--soft-rose); color: var(--accent-rose); }
+
+    .detail-card p { margin: 0; color: var(--text-muted); font-size: 13.8px; }
+    .detail-card ul {
+      margin: 0;
+      padding-left: 18px;
+      font-size: 13.5px;
+      color: var(--text-muted);
+    }
+    .detail-card li { margin-bottom: 5px; }
+    .detail-card li strong { color: var(--text); }
+
+    /* Wire Frame Packet Visualizer */
+    .packet-bar {
+      display: flex;
+      border-radius: 9px;
+      overflow: hidden;
+      border: 1px solid var(--border-strong);
+      font-family: var(--font-mono);
+      font-size: 12px;
+      margin: 10px 0;
+    }
+    .pkt-seg {
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      border-right: 1px solid var(--border-strong);
+    }
+    .pkt-seg:last-child { border-right: none; }
+    .pkt-title { font-weight: 700; color: var(--text); }
+    .pkt-sub { font-size: 11px; color: var(--text-muted); }
+
+    /* Table */
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--bg-card);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13.5px;
+    }
+    th, td {
+      text-align: left;
+      padding: 11px 14px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+    th {
+      background: var(--bg-elev);
+      color: var(--text-muted);
+      font-weight: 600;
+      font-size: 12.5px;
+      white-space: nowrap;
+    }
+    tr:last-child td { border-bottom: none; }
+
+    /* Package Explorer */
+    .filter-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 14px;
+      align-items: center;
+    }
+    .search-input {
+      padding: 8px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--bg-elev);
+      color: var(--text);
+      font-size: 13.5px;
+      min-width: 220px;
+      outline: none;
+    }
+    .search-input:focus { border-color: var(--accent-blue); }
+    .pkg-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+      gap: 12px;
+    }
+    .pkg-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 11px;
+      padding: 14px 16px;
+      transition: border-color 0.15s;
+    }
+    .pkg-card:hover { border-color: var(--border-strong); }
+    .pkg-path {
+      font-family: var(--font-mono);
+      font-size: 12.5px;
+      font-weight: 700;
+      color: var(--accent-blue);
+      margin-bottom: 4px;
+      word-break: break-all;
+    }
+    .pkg-desc { font-size: 13px; color: var(--text-muted); margin-bottom: 8px; }
+
+    /* Callout */
+    .callout {
+      border-left: 3px solid var(--accent-amber);
+      background: var(--soft-amber);
+      border-radius: 0 10px 10px 0;
+      padding: 12px 16px;
+      font-size: 13.5px;
+      color: var(--text);
+      margin-top: 14px;
+    }
+
+    /* Responsive */
+    @media (max-width: 1060px) {
+      .arch-layout { grid-template-columns: 1fr; }
+      .inspector { position: static; }
+      .grid-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 820px) {
+      .app-shell { grid-template-columns: 1fr; }
+      .sidebar {
+        position: static;
+        height: auto;
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+      }
+      .main { padding: 22px 18px 64px; }
+      .grid-2, .grid-3 { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <!-- Left Navigation -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-icon">AL</div>
+        <div>
+          <div class="brand-title">Airlock (cage-mygo)</div>
+          <div class="brand-sub">MyGo macOS Edition</div>
+        </div>
+      </div>
+
+      <div>
+        <div class="toc-group-title">架构导览</div>
+        <ul class="toc-list" id="tocList">
+          <li><a href="#overview" class="active"><span class="toc-num">01</span>全局分层架构图</a></li>
+          <li><a href="#lifecycle"><span class="toc-num">02</span>桌面端与控制平面通信</a></li>
+          <li><a href="#surfaces"><span class="toc-num">03</span>三大核心画布实现</a></li>
+          <li><a href="#media"><span class="toc-num">04</span>音频、剪贴板与原生桥接</a></li>
+          <li><a href="#security"><span class="toc-num">05</span>安全隔离、代理与 Herdr</a></li>
+          <li><a href="#remote"><span class="toc-num">06</span>Cloud SSH 与移动端中继</a></li>
+          <li><a href="#updater"><span class="toc-num">07</span>macOS 原子更新与签名</a></li>
+          <li><a href="#packages"><span class="toc-num">08</span>代码目录全景地图</a></li>
+          <li><a href="#build"><span class="toc-num">09</span>构建、双版本打包与验证</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-footer">
+        <button class="theme-btn" id="themeToggle" type="button">
+          <span>切换明暗主题</span>
+          <span id="themeIcon" style="font-family:var(--font-mono);font-size:12px;">DARK</span>
+        </button>
+        <div style="font-size:11.5px;color:var(--text-dim);padding:0 4px;">
+          基于源码实勘：<code>cage-mygo</code><br/>
+          纯离线单文件交互式文档
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Body -->
+    <main class="main">
+      <!-- Hero -->
+      <header class="hero">
+        <div class="hero-eyebrow">ARCHITECTURE BLUEPRINT · APPLE SILICON MACOS 14+</div>
+        <h1>Airlock（<code>cage-mygo</code>）架构与核心实现深度解析</h1>
+        <p>
+          <strong>Airlock</strong> 是基于 <strong>Go + MyGo 原生桌面框架 + Objective-C cgo</strong> 构建的隔离 AI 工作台。
+          它用纯原生 macOS 界面取代传统重型 Electron 前端，同时完整复用成熟的 <code>cage</code> 隔离控制平面，统一调度
+          <strong>Apple Virtualization macOS 客机</strong>、<strong>Lima Linux 客机</strong>、<strong>Cloud SSH 远程 Linux/Windows 主机</strong>
+          以及 <strong>移动端 E2EE 中继访问</strong>。
+        </p>
+        <div class="kpi-grid">
+          <div class="kpi">
+            <div class="kpi-label">原生前端技术栈</div>
+            <div class="kpi-val">Go + MyGo v0.9.1</div>
+            <div class="kpi-sub">Ghostty VT · 仅 VNC 按需嵌入 WKWebView</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-label">进程拓扑模型</div>
+            <div class="kpi-val">UI ↔ Controller</div>
+            <div class="kpi-sub">Loopback HTTP/WS/SSE + 一次性 Ticket</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-label">虚拟化与代理</div>
+            <div class="kpi-val">VZ + Lima + Mihomo</div>
+            <div class="kpi-sub">netstack 出口拦截 · 内置 Mihomo 核心</div>
+          </div>
+          <div class="kpi">
+            <div class="kpi-label">安全与原生集成</div>
+            <div class="kpi-val">Keychain + MCP</div>
+            <div class="kpi-sub">Touch ID · 原子自更新 · Herdr 受限桥接</div>
+          </div>
+        </div>
+      </header>
+
+      <!-- 01. Global Architecture -->
+      <section id="overview">
+        <div class="sec-head">
+          <h2><span class="sec-badge">01</span>全局分层架构图（交互式）</h2>
+          <span style="font-size:12.5px;color:var(--text-dim);">点击任意架构节点查看源码路径与实现细节</span>
+        </div>
+        <p class="sec-desc">
+          系统采用清晰的双进程 + 多层隔离架构：前景层 <code>Airlock.app</code>（<code>cmd/cage-desktop</code>）负责原生渲染、系统能力与用户输入；
+          后台控制平面 <code>cage</code>（或轻量版 <code>cage-client</code>）独立存活于后台，管理虚拟机生命周期、代理路由、安全门控、多终端 PTY、远程网关与移动端中继。
+          关闭主窗口仅隐藏到 Dock，虚拟机与后台任务可继续运行。
+        </p>
+
+        <div class="arch-layout">
+          <div class="svg-wrap">
+            <svg viewBox="0 0 820 660" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Airlock 分层架构图">
+              <defs>
+                <marker id="arrowBlue" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                  <path d="M 0 1 L 10 5 L 0 9 z" fill="#4ea1ff" />
+                </marker>
+                <marker id="arrowCyan" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                  <path d="M 0 1 L 10 5 L 0 9 z" fill="#2dd4bf" />
+                </marker>
+                <marker id="arrowAmber" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                  <path d="M 0 1 L 10 5 L 0 9 z" fill="#fbbf24" />
+                </marker>
+                <marker id="arrowViolet" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                  <path d="M 0 1 L 10 5 L 0 9 z" fill="#a78bfa" />
+                </marker>
+              </defs>
+
+              <!-- Layer 1 Container -->
+              <rect x="14" y="14" width="792" height="176" rx="14" fill="rgba(78,161,255,0.06)" stroke="#2c446e" stroke-dasharray="5 4" />
+              <text x="28" y="36" fill="#4ea1ff" font-size="12" font-weight="700" font-family="SF Mono, monospace">LAYER 1 · 原生桌面客户端进程 (Airlock.app / cmd/cage-desktop)</text>
+
+              <!-- Node: cage-desktop -->
+              <g class="arch-node selected" data-node="desktop" tabindex="0">
+                <rect class="node-bg" x="28" y="50" width="175" height="122" rx="10" fill="#162238" stroke="#4ea1ff" stroke-width="1.5" />
+                <text x="42" y="74" fill="#e6ecf7" font-size="13.5" font-weight="700">MyGo App 壳与菜单</text>
+                <text x="42" y="93" fill="#4ea1ff" font-size="11" font-family="SF Mono, monospace">cmd/cage-desktop</text>
+                <text x="42" y="114" fill="#93a2be" font-size="11.5">• 单实例锁 &amp; Dock 驻留</text>
+                <text x="42" y="132" fill="#93a2be" font-size="11.5">• 原生菜单栏 / 快捷键</text>
+                <text x="42" y="150" fill="#93a2be" font-size="11.5">• 退出保护弹窗 &amp; HostBridge</text>
+              </g>
+
+              <!-- Node: views -->
+              <g class="arch-node" data-node="views" tabindex="0">
+                <rect class="node-bg" x="218" y="50" width="180" height="122" rx="10" fill="#162238" stroke="#4ea1ff" stroke-width="1.5" />
+                <text x="232" y="74" fill="#e6ecf7" font-size="13.5" font-weight="700">声明式原生视图树</text>
+                <text x="232" y="93" fill="#4ea1ff" font-size="11" font-family="SF Mono, monospace">mygoclient/views</text>
+                <text x="232" y="114" fill="#93a2be" font-size="11.5">• 工作台 / 代理 / 安全检查</text>
+                <text x="232" y="132" fill="#93a2be" font-size="11.5">• Claude 多账号 / Tailscale</text>
+                <text x="232" y="150" fill="#93a2be" font-size="11.5">• 保险箱 / Cloud SSH / 手机</text>
+              </g>
+
+              <!-- Node: surfaces -->
+              <g class="arch-node" data-node="surfaces" tabindex="0">
+                <rect class="node-bg" x="413" y="50" width="184" height="122" rx="10" fill="#14292e" stroke="#2dd4bf" stroke-width="1.5" />
+                <text x="427" y="74" fill="#e6ecf7" font-size="13.5" font-weight="700">三大交互画布引擎</text>
+                <text x="427" y="93" fill="#2dd4bf" font-size="11" font-family="SF Mono, monospace">mygoclient/surfaces</text>
+                <text x="427" y="114" fill="#93a2be" font-size="11.5">• Ghostty VT 原生终端</text>
+                <text x="427" y="132" fill="#93a2be" font-size="11.5">• macOS 客机位图+IME画布</text>
+                <text x="427" y="150" fill="#93a2be" font-size="11.5">• 轻量 WKWebView noVNC</text>
+              </g>
+
+              <!-- Node: core & macnative -->
+              <g class="arch-node" data-node="core_native" tabindex="0">
+                <rect class="node-bg" x="612" y="50" width="180" height="122" rx="10" fill="#1e1b33" stroke="#a78bfa" stroke-width="1.5" />
+                <text x="626" y="74" fill="#e6ecf7" font-size="13.5" font-weight="700">Core 与 macOS 原生桥</text>
+                <text x="626" y="93" fill="#a78bfa" font-size="11" font-family="SF Mono, monospace">core + internal/macnative</text>
+                <text x="626" y="114" fill="#93a2be" font-size="11.5">• Store / SSE / 48kHz PCM</text>
+                <text x="626" y="132" fill="#93a2be" font-size="11.5">• NSPasteboard 双向同步</text>
+                <text x="626" y="150" fill="#93a2be" font-size="11.5">• Touch ID Keychain / 更新器</text>
+              </g>
+
+              <!-- Transport arrows Layer 1 -> Layer 2 -->
+              <line x1="250" y1="190" x2="250" y2="232" stroke="#4ea1ff" stroke-width="2" marker-end="url(#arrowBlue)" marker-start="url(#arrowBlue)" />
+              <rect x="64" y="198" width="372" height="24" rx="6" fill="#0d111a" stroke="#2c446e" />
+              <text x="250" y="214" text-anchor="middle" fill="#93a2be" font-size="11" font-family="SF Mono, monospace">127.0.0.1 HTTP/REST · SSE · WebSocket · X-Cage-Connection</text>
+
+              <line x1="600" y1="190" x2="600" y2="232" stroke="#2dd4bf" stroke-width="2" marker-end="url(#arrowCyan)" marker-start="url(#arrowCyan)" />
+              <rect x="454" y="198" width="292" height="24" rx="6" fill="#0d111a" stroke="#1e5656" />
+              <text x="600" y="214" text-anchor="middle" fill="#2dd4bf" font-size="11" font-family="SF Mono, monospace">PTY / Frames / Audio / Clipboard / VNCBridge</text>
+
+              <!-- Layer 2 Container -->
+              <rect x="14" y="236" width="792" height="156" rx="14" fill="rgba(45,212,191,0.05)" stroke="#1f5452" stroke-dasharray="5 4" />
+              <text x="28" y="258" fill="#2dd4bf" font-size="12" font-weight="700" font-family="SF Mono, monospace">LAYER 2 · 后台控制平面进程 (Resources/cage 或 cage-client)</text>
+
+              <!-- Node: workbench -->
+              <g class="arch-node" data-node="workbench" tabindex="0">
+                <rect class="node-bg" x="28" y="272" width="248" height="104" rx="10" fill="#12262b" stroke="#2dd4bf" stroke-width="1.5" />
+                <text x="42" y="295" fill="#e6ecf7" font-size="13.5" font-weight="700">Workbench HTTP/WS 控制服务器</text>
+                <text x="42" y="313" fill="#2dd4bf" font-size="11" font-family="SF Mono, monospace">internal/workbench (server.go)</text>
+                <text x="42" y="334" fill="#93a2be" font-size="11.5">• Ticket→Cookie 鉴权 &amp; Origin 防护</text>
+                <text x="42" y="352" fill="#93a2be" font-size="11.5">• 账户锁 / 终端管理 / Claude 调度 / 保险箱</text>
+              </g>
+
+              <!-- Node: remote_gateway -->
+              <g class="arch-node" data-node="remote_gateway" tabindex="0">
+                <rect class="node-bg" x="292" y="272" width="244" height="104" rx="10" fill="#12262b" stroke="#2dd4bf" stroke-width="1.5" />
+                <text x="306" y="295" fill="#e6ecf7" font-size="13.5" font-weight="700">统一本地/远程路由网关</text>
+                <text x="306" y="313" fill="#2dd4bf" font-size="11" font-family="SF Mono, monospace">desktop_gateway.go + remotehost</text>
+                <text x="306" y="334" fill="#93a2be" font-size="11.5">• 按 X-Cage-Connection 分发请求</text>
+                <text x="306" y="352" fill="#93a2be" font-size="11.5">• SSH 隧道转发云端 Linux/Windows 控制面</text>
+              </g>
+
+              <!-- Node: herdr_web -->
+              <g class="arch-node" data-node="herdr_web" tabindex="0">
+                <rect class="node-bg" x="552" y="272" width="240" height="104" rx="10" fill="#261f12" stroke="#fbbf24" stroke-width="1.5" />
+                <text x="566" y="295" fill="#e6ecf7" font-size="13.5" font-weight="700">Herdr MCP 桥 &amp; 内嵌 Web 资产</text>
+                <text x="566" y="313" fill="#fbbf24" font-size="11" font-family="SF Mono, monospace">internal/herdrbridge + web-surface</text>
+                <text x="566" y="334" fill="#93a2be" font-size="11.5">• Guest→Host 受限 Agent MCP 代理</text>
+                <text x="566" y="352" fill="#93a2be" font-size="11.5">• embed.FS 提供 noVNC 与移动网页</text>
+              </g>
+
+              <!-- Layer 2 -> Layer 3 arrows -->
+              <line x1="150" y1="392" x2="150" y2="432" stroke="#fbbf24" stroke-width="2" marker-end="url(#arrowAmber)" />
+              <line x1="410" y1="392" x2="410" y2="432" stroke="#fbbf24" stroke-width="2" marker-end="url(#arrowAmber)" />
+              <line x1="670" y1="392" x2="670" y2="432" stroke="#a78bfa" stroke-width="2" marker-end="url(#arrowViolet)" />
+
+              <!-- Layer 3 Container -->
+              <rect x="14" y="436" width="516" height="208" rx="14" fill="rgba(251,191,36,0.05)" stroke="#664f1c" stroke-dasharray="5 4" />
+              <text x="28" y="458" fill="#fbbf24" font-size="12" font-weight="700" font-family="SF Mono, monospace">LAYER 3 · 本地隔离运行时与安全沙箱 (Full Edition)</text>
+
+              <!-- Node: vm_runtime -->
+              <g class="arch-node" data-node="vm_runtime" tabindex="0">
+                <rect class="node-bg" x="28" y="472" width="236" height="156" rx="10" fill="#231c12" stroke="#fbbf24" stroke-width="1.5" />
+                <text x="42" y="495" fill="#e6ecf7" font-size="13.5" font-weight="700">双内核虚拟化运行时</text>
+                <text x="42" y="513" fill="#fbbf24" font-size="11" font-family="SF Mono, monospace">internal/vm + guestos + maclogin</text>
+                <text x="42" y="534" fill="#93a2be" font-size="11.5">• Apple VZ 隔离 macOS 客机</text>
+                <text x="42" y="552" fill="#93a2be" font-size="11.5">  (IPSW 恢复 · OffscreenView 登录)</text>
+                <text x="42" y="572" fill="#93a2be" font-size="11.5">• Lima 隔离 Linux 客机</text>
+                <text x="42" y="590" fill="#93a2be" font-size="11.5">  (内嵌 guestagent + templates)</text>
+                <text x="42" y="610" fill="#93a2be" font-size="11.5">• 浏览器 / 终端 / 桌面客机服务</text>
+              </g>
+
+              <!-- Node: net_mounts -->
+              <g class="arch-node" data-node="net_mounts" tabindex="0">
+                <rect class="node-bg" x="278" y="472" width="238" height="156" rx="10" fill="#281620" stroke="#fb7185" stroke-width="1.5" />
+                <text x="292" y="495" fill="#e6ecf7" font-size="13.5" font-weight="700">网络、代理与挂载安全层</text>
+                <text x="292" y="513" fill="#fb7185" font-size="11" font-family="SF Mono, monospace">netguard + managedproxy + mounts</text>
+                <text x="292" y="534" fill="#93a2be" font-size="11.5">• NetGuard：阻断内网/Loopback/CGNAT</text>
+                <text x="292" y="552" fill="#93a2be" font-size="11.5">• 内置 Mihomo 代理核心 (UDS API)</text>
+                <text x="292" y="572" fill="#93a2be" font-size="11.5">• Mounts + GitGuard：禁挂敏感目录</text>
+                <text x="292" y="590" fill="#93a2be" font-size="11.5">  且 .git/.hg/.sl/.jj 强制只读</text>
+                <text x="292" y="610" fill="#93a2be" font-size="11.5">• Tailnet 私网助手 (cage-tailnet)</text>
+              </g>
+
+              <!-- Layer 4 Container (Remote & Mobile) -->
+              <rect x="546" y="436" width="260" height="208" rx="14" fill="rgba(167,139,250,0.06)" stroke="#4c3d75" stroke-dasharray="5 4" />
+              <text x="560" y="458" fill="#a78bfa" font-size="12" font-weight="700" font-family="SF Mono, monospace">LAYER 4 · 云端与移动端扩展</text>
+
+              <!-- Node: cloud_mobile -->
+              <g class="arch-node" data-node="cloud_mobile" tabindex="0">
+                <rect class="node-bg" x="560" y="472" width="232" height="156" rx="10" fill="#1e1833" stroke="#a78bfa" stroke-width="1.5" />
+                <text x="574" y="495" fill="#e6ecf7" font-size="13.5" font-weight="700">Cloud SSH &amp; Mobile Link</text>
+                <text x="574" y="513" fill="#a78bfa" font-size="11" font-family="SF Mono, monospace">remotehost + mobilelink + relay</text>
+                <text x="574" y="534" fill="#93a2be" font-size="11.5">• SSH 部署/接入云端 Linux/Win</text>
+                <text x="574" y="552" fill="#93a2be" font-size="11.5">• 手机扫码配对 &amp; 二维码管理</text>
+                <text x="574" y="572" fill="#93a2be" font-size="11.5">• WebSocket Relay 零信任中继</text>
+                <text x="574" y="590" fill="#93a2be" font-size="11.5">  (cage-remote/1 TLS + SPKI Pin)</text>
+                <text x="574" y="610" fill="#93a2be" font-size="11.5">• 独立部署 deploy/cloud &amp; relay</text>
+              </g>
+            </svg>
+          </div>
+
+          <!-- Dynamic Inspector Panel -->
+          <aside class="inspector" id="archInspector" aria-live="polite"></aside>
+        </div>
+      </section>
+
+      <!-- 02. Desktop <-> Controller Lifecycle -->
+      <section id="lifecycle">
+        <div class="sec-head">
+          <h2><span class="sec-badge">02</span>桌面客户端与控制平面的通信、认证与状态同步</h2>
+        </div>
+        <p class="sec-desc">
+          <code>Airlock.app</code> 并不直接内嵌虚拟机驱动，而是通过 <code>ControllerClient</code> 引导、附着并与后台 <code>cage</code>（或 <code>cage-client</code>）通信。
+          这样即使 UI 崩溃或用户关闭窗口，隔离环境、代理核心与正在运行的 AI 任务依然稳定运行。
+        </p>
+
+        <div class="svg-wrap" style="margin-bottom:18px;">
+          <svg viewBox="0 0 880 265" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="启动认证与状态同步时序图">
+            <!-- Swimlanes -->
+            <rect x="20" y="14" width="160" height="36" rx="8" fill="#162238" stroke="#4ea1ff" />
+            <text x="100" y="37" text-anchor="middle" fill="#e6ecf7" font-size="12.5" font-weight="700">cage-desktop (UI)</text>
+            <line x1="100" y1="50" x2="100" y2="250" stroke="#2c446e" stroke-dasharray="4 4" />
+
+            <rect x="240" y="14" width="175" height="36" rx="8" fill="#162238" stroke="#2dd4bf" />
+            <text x="327" y="37" text-anchor="middle" fill="#e6ecf7" font-size="12.5" font-weight="700">ControllerClient / Store</text>
+            <line x1="327" y1="50" x2="327" y2="250" stroke="#1f5452" stroke-dasharray="4 4" />
+
+            <rect x="475" y="14" width="175" height="36" rx="8" fill="#12262b" stroke="#fbbf24" />
+            <text x="562" y="37" text-anchor="middle" fill="#e6ecf7" font-size="12.5" font-weight="700">cage desktop --json</text>
+            <line x1="562" y1="50" x2="562" y2="250" stroke="#664f1c" stroke-dasharray="4 4" />
+
+            <rect x="705" y="14" width="155" height="36" rx="8" fill="#1e1833" stroke="#a78bfa" />
+            <text x="782" y="37" text-anchor="middle" fill="#e6ecf7" font-size="12.5" font-weight="700">Workbench Server</text>
+            <line x1="782" y1="50" x2="782" y2="250" stroke="#4c3d75" stroke-dasharray="4 4" />
+
+            <!-- Step 1 -->
+            <line x1="100" y1="74" x2="322" y2="74" stroke="#4ea1ff" stroke-width="1.8" marker-end="url(#arrowBlue)" />
+            <text x="211" y="68" text-anchor="middle" fill="#93a2be" font-size="11">1. PinEnvironment + Store.Start()</text>
+
+            <!-- Step 2 -->
+            <line x1="327" y1="104" x2="557" y2="104" stroke="#fbbf24" stroke-width="1.8" marker-end="url(#arrowAmber)" />
+            <text x="442" y="98" text-anchor="middle" fill="#fbbf24" font-size="11" font-family="SF Mono, monospace">2. exec: cage desktop --json</text>
+
+            <!-- Step 3 -->
+            <line x1="562" y1="130" x2="332" y2="130" stroke="#2dd4bf" stroke-width="1.8" marker-end="url(#arrowCyan)" />
+            <text x="447" y="124" text-anchor="middle" fill="#2dd4bf" font-size="11" font-family="SF Mono, monospace">3. 返回 {origin, one-time ticket, controller}</text>
+
+            <!-- Step 4 -->
+            <line x1="327" y1="162" x2="777" y2="162" stroke="#a78bfa" stroke-width="1.8" marker-end="url(#arrowViolet)" />
+            <text x="552" y="156" text-anchor="middle" fill="#a78bfa" font-size="11" font-family="SF Mono, monospace">4. POST /api/session (ticket) → Set-Cookie: cage_session (HttpOnly)</text>
+
+            <!-- Step 5 -->
+            <line x1="327" y1="194" x2="777" y2="194" stroke="#4ea1ff" stroke-width="1.8" marker-end="url(#arrowBlue)" />
+            <text x="552" y="188" text-anchor="middle" fill="#93a2be" font-size="11" font-family="SF Mono, monospace">5. POST /api/agent/native/window → 签发 windowProof 凭证</text>
+
+            <!-- Step 6 -->
+            <line x1="327" y1="226" x2="777" y2="226" stroke="#2dd4bf" stroke-width="1.8" marker-end="url(#arrowCyan)" marker-start="url(#arrowCyan)" />
+            <text x="552" y="220" text-anchor="middle" fill="#2dd4bf" font-size="11">6. 定时状态聚合 + Browser SSE 推送 + /api/agent/native?consumer=window 轮询</text>
+          </svg>
+        </div>
+
+        <div class="grid-3">
+          <div class="detail-card">
+            <h3>会话安全与多上下文路由 <span class="pill pill-blue">controller.go</span></h3>
+            <ul>
+              <li><strong>一次性 Ticket 换 Cookie</strong>：首次通过 <code>cage desktop --json</code> 获取含一次性 ticket 的 URL，随后经 <code>POST /api/session</code> 换取 <code>HttpOnly</code> 的 <code>cage_session</code> Cookie。</li>
+              <li><strong>统一上下文头</strong>：所有 API/WS 请求均携带 <code>X-Cage-Connection</code>（<code>local</code> 或云端 <code>connection_id</code>），后端 <code>desktop_gateway.go</code> 无缝将其路由至本地控制面或远端 SSH 隧道。</li>
+              <li><strong>WKWebView 独立票据</strong>：由于 macOS <code>WKWebView</code> 与 Go <code>http.CookieJar</code> 不共享 Cookie，<code>IssueLaunchTicket()</code> 单独为 VNC WebView 签发一次性票据。</li>
+            </ul>
+          </div>
+
+          <div class="detail-card">
+            <h3>响应式快照状态机 <span class="pill pill-cyan">store.go</span></h3>
+            <ul>
+              <li><strong>无锁读快照</strong>：<code>Store</code> 维护聚合 <code>Snapshot</code>（账户、初始化、VM 状态、代理、终端、Claude 账号、Tailscale、云主机、保险箱等），<code>Snapshot()</code> 执行浅拷贝切片保护，UI 渲染线程零阻塞读取。</li>
+              <li><strong>按需重绘</strong>：任何后端状态变更后调用 <code>invalidate()</code> 触发 <code>mainWin.Invalidate()</code> 重建 MyGo 视图树。</li>
+              <li><strong>本地偏好原子落盘</strong>：侧栏宽度、主题模式、音量等配置通过 <code>.tmp → os.Rename</code> 原子写入 <code>client-preferences.json</code>（<code>0600</code>）。</li>
+            </ul>
+          </div>
+
+          <div class="detail-card">
+            <h3>Agent 原生动作闭环 <span class="pill pill-violet">agent_native.go</span></h3>
+            <ul>
+              <li><strong>CLI → 桌面窗口回调</strong>：当用户或脚本运行 <code>cage agent</code> 需要唤起原生能力时，控制面将任务写入 <code>agentNativeQueue</code>。</li>
+              <li><strong>窗口证明鉴权</strong>：<code>AgentNativeLoop</code> 携带 <code>windowProof</code> 轮询 <code>GET /api/agent/native?consumer=window</code>。</li>
+              <li><strong>HostBridge 抽象解耦</strong>：文件选择框、保存框、Finder 定位、Touch ID 设备注册与更新触发全部封装在 <code>HostBridge</code> 接口，确保 headless 单测无需启动 GUI。</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- 03. Three Core Surfaces -->
+      <section id="surfaces">
+        <div class="sec-head">
+          <h2><span class="sec-badge">03</span>三大核心交互画布的实现细节</h2>
+        </div>
+        <p class="sec-desc">
+          Airlock 针对不同交互形态采用了“原生优先、按需混合”的策略：终端使用原生 <code>libghostty-vt</code>，macOS 客机画面使用自研二进制流 + 原生 <code>ui.Image</code> + 完整 CJK 输入法合成，Linux / Cloud SSH 隔离浏览器则复用轻量无铬 <code>WKWebView</code> + 定制 noVNC。
+        </p>
+
+        <div class="tabs" data-tab-group="surfaces">
+          <button class="tab-btn active" data-tab="surf-term">1. Ghostty 原生终端</button>
+          <button class="tab-btn" data-tab="surf-macos">2. macOS 客机原生画布 &amp; IME</button>
+          <button class="tab-btn" data-tab="surf-vnc">3. Linux / Cloud noVNC WebView</button>
+        </div>
+
+        <!-- Tab 1: Terminal -->
+        <div class="tab-panel active" id="surf-term">
+          <div class="card">
+            <div class="grid-2">
+              <div>
+                <h3 style="margin-top:0;">架构与双向 PTY 桥接 <code>terminal_surface.go</code></h3>
+                <p style="color:var(--text-muted);font-size:14px;">
+                  终端直接集成 MyGo 的 <code>plugins/terminal</code>（底层为 <strong>Ghostty <code>libghostty-vt</code></strong> 终端模拟器），通过自定义 <code>wsTerminalConn</code> 适配 Go <code>io.ReadWriteCloser</code> 与窗口尺寸同步接口。
+                </p>
+                <ul style="font-size:13.8px;color:var(--text-muted);padding-left:18px;">
+                  <li><strong>协议分层</strong>：连接 <code>/api/terminals/{id}/stream</code> WebSocket。后端下行的 <em>Binary Frame</em> 为原始 PTY 字节流（写入环形 <code>bytes.Buffer</code> 并通过 <code>sync.Cond</code> 唤醒读取器）；<em>Text Frame</em> 承载控制事件（如 <code>{"type":"cli-startup","pending":true}</code>）。</li>
+                  <li><strong>输入与缩放</strong>：终端按键输入封装为 <code>{"type":"input","data":"..."}</code> JSON 帧；窗口变化触发 <code>{"type":"resize","cols":C,"rows":R}</code>。</li>
+                  <li><strong>HTTP/HTTPS 链接隔离打开</strong>：点击终端内链接时直接路由到隔离浏览器（对应近期提交 <code>4bd70b5</code>），防止误触宿主机浏览器造成泄露。</li>
+                </ul>
+              </div>
+              <div>
+                <h3 style="margin-top:0;">亮点特性：OAuth 链接捕获 &amp; 拖拽上传</h3>
+                <p style="color:var(--text-muted);font-size:14px;">
+                  在客机内执行 Claude 登录时，终端输出的超长 OAuth URL 常被 PTY 折行截断并夹杂 ANSI 转义序列：
+                </p>
+                <pre><code>// 1. 剥离 CSI / OSC ANSI 转义码
+clean := ansiEscapeRe.ReplaceAllString(string(chunk), "")
+// 2. 维护 16KB 滑动尾部缓冲并拼接硬换行
+text := strings.ReplaceAll(strings.ReplaceAll(tailBuf.String(), "\r\n", ""), "\n", "")
+// 3. 严格白名单域名 + /oauth/authorize 校验
+//    claude.ai / claude.com / console.anthropic.com / platform.claude.com</code></pre>
+                <p style="color:var(--text-muted);font-size:13.5px;margin-top:10px;">
+                  命中后立即在顶部弹出授权引导条，一键在隔离浏览器打开完成登录。同时支持通过 MyGo <code>transfer</code> 拖拽宿主机文件进终端，自动上传至客机工作区并经 <code>shellescape.Quote</code> 转义后注入命令行。
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 2: macOS Guest Surface -->
+        <div class="tab-panel" id="surf-macos">
+          <div class="card">
+            <h3 style="margin-top:0;">双通道低延迟流 + 原生 <code>ui.TextInputClient</code> 中文输入法 <code>macos_surface.go</code></h3>
+            <p style="color:var(--text-muted);font-size:14px;">
+              当运行 Apple Silicon <strong>macOS 隔离客机</strong> 时，Airlock 不走 VNC，而是直接驱动客机内原生窗口服务（<code>/api/macos-browser/*</code> 或 <code>/api/macos/claude/*</code>），实现高 DPI Retina 画质与接近本机的中文输入体验。
+            </p>
+
+            <div style="margin:14px 0 6px;font-size:12.5px;color:var(--text-dim);font-family:var(--font-mono);">
+              WebSocket /frames 二进制帧协议（带 ACK 背压流控）
+            </div>
+            <div class="packet-bar">
+              <div class="pkt-seg" style="flex:0 0 130px;background:var(--soft-blue);">
+                <span class="pkt-title">4 Bytes (BE)</span>
+                <span class="pkt-sub">uint32 metaLen</span>
+              </div>
+              <div class="pkt-seg" style="flex:1.2;background:var(--soft-cyan);">
+                <span class="pkt-title">JSON macOSFrameHeader</span>
+                <span class="pkt-sub">sequence, window, pid, contentW/H, pixelW/H, revision</span>
+              </div>
+              <div class="pkt-seg" style="flex:1.5;background:var(--soft-violet);">
+                <span class="pkt-title">Encoded Image Payload</span>
+                <span class="pkt-sub">ui.DecodeBitmap(pixels) → GPU 纹理渲染 + 回发 {"ack": seq}</span>
+              </div>
+            </div>
+
+            <div class="grid-2" style="margin-top:16px;">
+              <div>
+                <h4 style="margin:0 0 8px;font-size:14.5px;">控制通道 &amp; 坐标精确映射</h4>
+                <ul style="font-size:13.5px;color:var(--text-muted);padding-left:18px;margin:0;">
+                  <li><strong>双 WebSocket 分离</strong>：<code>framesLoop</code> 专注图像帧流与尺寸订阅（支持 <code>320×240</code> 至 <code>2560×1600</code>、1x/2x scale），<code>connectionLoop</code> 承载带请求序号（<code>rpcSeq</code>）的多路复用 JSON-RPC 输入事件，断线自动降级 HTTP <code>POST .../window</code>。</li>
+                  <li><strong>Letterbox 坐标换算</strong>：<code>ComputeAspectFitRect()</code> 保持客机窗口纵横比居中显示，<code>MapPointNormalized()</code> 与 <code>MapPointPixels()</code> 将宿主机指针坐标精确映射回客机像素空间。</li>
+                </ul>
+              </div>
+              <div>
+                <h4 style="margin:0 0 8px;font-size:14.5px;">原生 CJK / Dead-Key 输入法合成</h4>
+                <ul style="font-size:13.5px;color:var(--text-muted);padding-left:18px;margin:0;">
+                  <li><strong><code>MacOSIMETextClient</code></strong> 完整实现 <code>ui.TextInputClient</code> 接口（<code>SetMarkedText</code> / <code>ReplaceText</code> / <code>UnmarkText</code> / <code>BoundsForRange</code>）。</li>
+                  <li><strong>UTF-16 偏移对齐</strong>：使用 <code>ui.UTF16Len</code> / <code>ui.UTF16ByteOffset</code> 维护轻量影子缓冲（上限 512 字节），向客机发送 <code>begin → update → commit / cancel</code> 带单调递增 <code>seq</code> 的 IME 事务流，候选词框精准跟随客机光标位置。</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 3: VNC WebView -->
+        <div class="tab-panel" id="surf-vnc">
+          <div class="card">
+            <div class="grid-2">
+              <div>
+                <h3 style="margin-top:0;">轻量无铬 WKWebView + 定制 noVNC <code>vnc_surface.go</code></h3>
+                <p style="color:var(--text-muted);font-size:14px;">
+                  面向 Lima Linux 客机与 Cloud SSH 远程主机，Airlock 仅在浏览器/桌面画布区域异步挂载一个极简 <code>WKWebView</code> 加载 <code>/vnc-surface.html</code>，其余全部 UI 保持纯 Go 原生。
+                </p>
+                <ul style="font-size:13.5px;color:var(--text-muted);padding-left:18px;">
+                  <li><strong>非阻塞异步生命周期</strong>：<code>VNCSurfaceManager.SyncSurface()</code> 保证在 <code>ui.View</code> 渲染周期内绝不阻塞，WebView 创建与配置下发均在后台 goroutine 配合 <code>generation</code> 代数防竞态完成。</li>
+                  <li><strong>Go ↔ JS 原生桥</strong>：启动时通过 <code>mygo.BindAs("VNCBridge", vncBridge)</code> 注入绑定对象，前端 JS 直接调用 <code>window.mygo.call("VNCBridge.Method", ...)</code> 上报连接状态、刷新会话票据、读写宿主机剪贴板和上传已选文件。</li>
+                </ul>
+              </div>
+              <div>
+                <h3 style="margin-top:0;">定制 noVNC 增强（<code>web-surface/</code>）</h3>
+                <ul style="font-size:13.5px;color:var(--text-muted);padding-left:18px;">
+                  <li><strong>动态分辨率与像素滚轮</strong>：通过 <code>remote-display.js</code> + <code>cage-wheel.js</code> 监听 DPR 与视口变化，支持高精度像素级滚轮直传 <code>/browser/wheel</code>。</li>
+                  <li><strong>会话无 Cookie 依赖引导</strong>：URL hash 传递一次性票据，页面启动立即调用 <code>history.replaceState</code> 擦除地址栏票据并调用 <code>/api/session</code> 建立 WebView 私有会话。</li>
+                  <li><strong>资产完整性校验</strong>：通过 <code>node scripts/build-web-surface.mjs</code> 打补丁并打包进 Go <code>embed.FS</code>，启动或构建时可用 <code>cage verify-web-assets</code> 校验哈希清单。</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 04. Audio, Clipboard & Native Bridge -->
+      <section id="media">
+        <div class="sec-head">
+          <h2><span class="sec-badge">04</span>音频流、双向剪贴板与 macOS Objective-C 原生层</h2>
+        </div>
+        <div class="grid-3">
+          <div class="detail-card">
+            <h3>低延迟 PCM 音频引擎 <span class="pill pill-emerald">audio.go</span></h3>
+            <p>将客机内浏览器音视频实时同步至 macOS 扬声器，严格防止音画漂移。</p>
+            <ul>
+              <li><strong>数据规格</strong>：WebSocket <code>/api/audio</code> 传输 <strong>48kHz、立体声（2ch）、16-bit Little-Endian PCM</strong>。</li>
+              <li><strong>防滞后环形缓冲</strong>：<code>PCMDecoder</code> 内部维护 2 秒容量的 <code>float32</code> 环形队列，同时设置 <strong>250ms 延迟硬上限</strong>（<code>audioMaxQueued</code>）——超出即按立体声帧对齐（<code>&amp;^1</code>）丢弃最旧样本。</li>
+              <li><strong>交互级音频会话</strong>：使用 <code>mygo/audio</code> 的 <code>LatencyInteractive</code> 策略，支持静音自动清缓冲与平滑音量调节。</li>
+            </ul>
+          </div>
+
+          <div class="detail-card">
+            <h3>双向剪贴板与防回环 <span class="pill pill-cyan">clipboard_sync.go</span></h3>
+            <p>支持文本、图片（≤ 20MB PNG）与多文件在 macOS 宿主机与客机间无缝复制粘贴。</p>
+            <ul>
+              <li><strong>changeCount 防回环</strong>：后台每 <strong>350ms</strong> 轮询 <code>[NSPasteboard generalPasteboard].changeCount</code>；当接收到客机剪贴板写入本机后，立即同步刷新 <code>lastCount</code>，彻底避免双向死循环。</li>
+              <li><strong>可靠确认与代数取消</strong>：协议包含 <code>hello / serial / ack / release</code>，大文件通过缓存 ID 异步拉取，并使用 <code>generation</code> 令牌避免过期传输覆盖新复制内容。</li>
+              <li><strong>自动缓存清理</strong>：<code>ClipboardCacheTracker</code> 监听粘贴板变化并自动回收不再引用的临时传输文件。</li>
+            </ul>
+          </div>
+
+          <div class="detail-card">
+            <h3>Objective-C 原生桥接 <span class="pill pill-violet">native_darwin.m</span></h3>
+            <p>通过 <code>cgo</code> 直接调用 Apple Cocoa / Security / LocalAuthentication 原生框架。</p>
+            <ul>
+              <li><strong>Touch ID 钥匙串解锁</strong>：使用 <code>kSecUseDataProtectionKeychain</code> + <code>kSecAccessControlBiometryCurrentSet</code> + <code>kSecAttrAccessibleWhenUnlockedThisDeviceOnly</code>，确保指纹变更自动失效且绝不同步 iCloud。</li>
+              <li><strong>开发版优雅降级</strong>：检测到 <code>errSecMissingEntitlement</code> 时自动提示使用密码或“记住登录”，不影响开发调试。</li>
+              <li><strong>二进制 Plist 解析 &amp; 签名验证</strong>：原生解析 <code>Info.plist</code> 与校验 Apple Developer ID <code>TeamIdentifier</code>。</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- 05. Security, Proxy & Herdr MCP -->
+      <section id="security">
+        <div class="sec-head">
+          <h2><span class="sec-badge">05</span>纵深安全隔离、代理治理与 Herdr 受限 MCP 桥接</h2>
+        </div>
+        <p class="sec-desc">
+          Airlock 的核心价值是“让 AI Agent 在客机内全速自主执行，但对宿主机和内网保持最小暴露面”。安全策略在<strong>网络层、代理层、文件系统层、Git 层、跨宿主机 MCP 层</strong>五道防线同时生效。
+        </p>
+
+        <div class="grid-2">
+          <div class="detail-card">
+            <h3>防线 1：NetGuard 主机侧网络边界 <span class="pill pill-rose">internal/netguard</span></h3>
+            <p>直接运行在 Lima <code>hostagent</code> 的 per-instance <code>gvisor-tap-vsock</code> 网络栈中，客机内即使获得 root 也无法绕过。</p>
+            <ul>
+              <li><strong>默认“仅公网”策略</strong>：自动阻断宿主机 Loopback、私网（RFC1918）、Link-Local、以及其他 VM 的转发端口。</li>
+              <li><strong>封禁高危保留段与隧道封装</strong>：显式拦截 <code>100.64.0.0/10</code>（CGNAT/VPN）、<code>198.18.0.0/15</code>（FakeIP/Benchmark）、<code>0.0.0.0/8</code>、<code>240.0.0.0/4</code>，并拆解 <strong>NAT64 (<code>64:ff9b::/96</code>)、6to4 (<code>2002::/16</code>)、Teredo (<code>2001::/32</code>)</strong> 内嵌 IPv4 地址防止绕过。</li>
+              <li><strong>域名白名单与 30 分钟 DNS 记忆</strong>：配置 <code>domain</code> 规则后，仅放行经由内置 DNS 解析出的目标 IP（TTL 30min 支持连接池复用）。</li>
+            </ul>
+          </div>
+
+          <div class="detail-card">
+            <h3>防线 2：内置 Mihomo 托管代理核心 <span class="pill pill-amber">internal/managedproxy</span></h3>
+            <p>客机流量可经由订阅节点、链式代理或独立出口节点出网，所有运维动作全部封装托管。</p>
+            <ul>
+              <li><strong>严禁外部劫持</strong>：<code>CorePath()</code> 只加载应用内置 <code>mihomo</code> 可执行文件，绝不搜索 <code>PATH</code> 或其他应用包。</li>
+              <li><strong>变更前沙箱预检</strong>：写入配置前先在私密目录生成临时 YAML，执行 <code>mihomo -t</code>（15s 超时）预校验；失败则保留原配置并将日志送入诊断流。</li>
+              <li><strong>私有 UDS 控制面与错误脱敏</strong>：Mihomo 管理 API 仅监听 Unix Domain Socket（禁用 HTTP 重定向）；<code>coreError</code> 屏蔽 URL、路径与凭据防止日志泄露。</li>
+            </ul>
+          </div>
+
+          <div class="detail-card">
+            <h3>防线 3：挂载边界与 VCS Hook 防护 <span class="pill pill-emerald">mounts + gitguard</span></h3>
+            <p>防止客机内恶意脚本通过目录共享污染宿主机环境或植入仓库钩子实现宿主机代码执行。</p>
+            <ul>
+              <li><strong>物理路径反逃逸校验</strong>：<code>UnsafeLocation()</code> 解析软链接（<code>paths.Real</code>）并大小写折叠（<code>paths.Fold</code>），严禁挂载 <code>$HOME</code>、<code>agent-vm</code> 自身、状态目录及 Lima 配置目录（及其父目录）。</li>
+              <li><strong>VCS 元数据强制只读</strong>：在 SFTP 共享层对任意层级的 <code>.git</code>、<code>.hg</code>、<code>.sl</code>、<code>.jj</code>（大小写不敏感）强制只读，阻断通过改写 <code>.git/config</code> 或 <code>hooks</code> 在宿主机触发命令执行的攻击链。</li>
+            </ul>
+          </div>
+
+          <div class="detail-card">
+            <h3>防线 4：Herdr 受限宿主机 Agent MCP 桥 <span class="pill pill-blue">herdrbridge</span></h3>
+            <p>允许客机内的 Agent 在严格约束下协作调用宿主机 CLI Agent（如 <code>codex</code> / <code>claude</code> / <code>opencode</code>），同时不暴露任意 Shell。</p>
+            <ul>
+              <li><strong>隧道与令牌隔离</strong>：Host 侧监听 <code>127.0.0.1:0</code> 随机端口并通过 SSH 反向隧道映射到 Guest <code>127.0.0.1:18520</code>；每次启动生成随机 Bearer Token 并用 <code>subtle.ConstantTimeCompare</code> 鉴权。</li>
+              <li><strong>标准 MCP over HTTP (<code>2025-03-26</code>)</strong>：暴露 <code>POST /mcp</code>（JSON-RPC 2.0，单条/批量）、<code>DELETE /mcp</code> 与 <code>GET /health</code>。</li>
+              <li><strong>白名单 Profile + 路径授权</strong>：仅允许配置白名单内的 Agent 与模式（区分 <code>read_only</code> 与 <code>workspace-write</code>）；所有 <code>workdir</code> 必须经 <code>PathResolver</code> 校验映射到已授权宿主机项目目录。</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- 06. Cloud SSH & Mobile Link -->
+      <section id="remote">
+        <div class="sec-head">
+          <h2><span class="sec-badge">06</span>Cloud SSH 远程主机与移动端零信任中继</h2>
+        </div>
+        <div class="grid-2">
+          <div class="detail-card">
+            <h3>Cloud SSH 远程工作台 <span class="pill pill-blue">internal/remotehost</span></h3>
+            <p>同一套 Airlock 桌面端可无缝接管云端 Linux 或 Windows Server 隔离工作台，并支持发布零虚拟化依赖的 <strong>Airlock Client</strong>。</p>
+            <ul>
+              <li><strong>显式状态机</strong>：<code>Manager</code> 严格管理 <code>disconnected → connecting (ssh_connect / deploy / ...) → connected / failed</code>，失败绝不静默切回本地或其它主机，避免误操作生产环境。</li>
+              <li><strong>透明 API 网关复用</strong>：前端视图与画布代码零分支——只需切换 <code>X-Cage-Connection</code>，本地 <code>desktop_gateway.go</code> 自动将 HTTP / WebSocket / 终端 / VNC 流量经 SSH 隧道转发给远端控制面。</li>
+              <li><strong>敏感凭据即时清零</strong>：连接协程退出时立即 <code>clear(secrets.Passphrase)</code> 擦除内存中的私钥口令。</li>
+            </ul>
+          </div>
+
+          <div class="detail-card">
+            <h3>移动端零信任中继 <span class="pill pill-violet">mobilelink + remotelink + relay</span></h3>
+            <p>允许用户在手机上扫码配对、随时查看和操控本机或云端工作台，且无需暴露公网 IP。</p>
+            <ul>
+              <li><strong>不可信中继架构</strong>：公网 <code>cage-relay</code> 仅充当盲转发房间（Room + 邀请码），通过 <code>mobilelink</code> 的 32 字节 Base64URL Capability 与 HTTPS 校验建立通道。</li>
+              <li><strong>端到端加密协议栈</strong>：<code>internal/remotelink</code> 在 WebSocket Binary 帧上承载完整 <strong>TLS 双向认证连接（ALPN: <code>cage-remote/1</code>）</strong>，再于 TLS 之上运行 <strong>HTTP/2</strong> 多路复用。</li>
+              <li><strong>SPKI 公钥钉扎</strong>：配对时交换 <code>sha256:Base64(SPKI DER)</code> 指纹；任何中间人或被攻破的 Relay 既无法读取明文，也无法伪造对端身份。单消息限 64 KiB，握手超时 15s。</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- 07. Atomic Self-Updater -->
+      <section id="updater">
+        <div class="sec-head">
+          <h2><span class="sec-badge">07</span>macOS 原子自更新与启动就绪回滚机制</h2>
+        </div>
+        <p class="sec-desc">
+          为了杜绝“更新到一半损坏应用”或“新版本崩溃导致用户无法启动”，Airlock 将更新拆分为主应用内的 <code>AppUpdater</code>（<code>internal/macnative/updater_darwin.go</code>）与独立签名辅助进程 <code>CageUpdateInstaller</code>（<code>cmd/cage-update-installer</code>）。
+        </p>
+
+        <div class="svg-wrap">
+          <svg viewBox="0 0 880 180" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="原子更新状态流">
+            <!-- Step boxes -->
+            <g>
+              <rect x="14" y="28" width="146" height="84" rx="10" fill="#162238" stroke="#4ea1ff" />
+              <text x="87" y="54" text-anchor="middle" fill="#e6ecf7" font-size="12.5" font-weight="700">1. 校验与准备</text>
+              <text x="87" y="74" text-anchor="middle" fill="#93a2be" font-size="11">SemVer / SHA-256</text>
+              <text x="87" y="92" text-anchor="middle" fill="#4ea1ff" font-size="10.5" font-family="SF Mono, monospace">SecStaticCode TeamID</text>
+            </g>
+            <line x1="160" y1="70" x2="188" y2="70" stroke="#4ea1ff" stroke-width="2" marker-end="url(#arrowBlue)" />
+
+            <g>
+              <rect x="192" y="28" width="150" height="84" rx="10" fill="#12262b" stroke="#2dd4bf" />
+              <text x="267" y="54" text-anchor="middle" fill="#e6ecf7" font-size="12.5" font-weight="700">2. 备份与握手</text>
+              <text x="267" y="74" text-anchor="middle" fill="#93a2be" font-size="11">ditto 备份旧 App</text>
+              <text x="267" y="92" text-anchor="middle" fill="#2dd4bf" font-size="10.5" font-family="SF Mono, monospace">ready → COMMIT\n</text>
+            </g>
+            <line x1="342" y1="70" x2="370" y2="70" stroke="#2dd4bf" stroke-width="2" marker-end="url(#arrowCyan)" />
+
+            <g>
+              <rect x="374" y="28" width="150" height="84" rx="10" fill="#231c12" stroke="#fbbf24" />
+              <text x="449" y="54" text-anchor="middle" fill="#e6ecf7" font-size="12.5" font-weight="700">3. 等待退出并替换</text>
+              <text x="449" y="74" text-anchor="middle" fill="#93a2be" font-size="11">等 ParentPID 终止(90s)</text>
+              <text x="449" y="92" text-anchor="middle" fill="#fbbf24" font-size="10.5" font-family="SF Mono, monospace">NSFileManager 原子替换</text>
+            </g>
+            <line x1="524" y1="70" x2="552" y2="70" stroke="#fbbf24" stroke-width="2" marker-end="url(#arrowAmber)" />
+
+            <g>
+              <rect x="556" y="28" width="146" height="84" rx="10" fill="#1e1833" stroke="#a78bfa" />
+              <text x="629" y="54" text-anchor="middle" fill="#e6ecf7" font-size="12.5" font-weight="700">4. 带令牌拉起新版</text>
+              <text x="629" y="74" text-anchor="middle" fill="#93a2be" font-size="11">注入确认 UUID Token</text>
+              <text x="629" y="92" text-anchor="middle" fill="#a78bfa" font-size="10.5" font-family="SF Mono, monospace">等待 launch-ack (45s)</text>
+            </g>
+            <line x1="702" y1="70" x2="730" y2="70" stroke="#a78bfa" stroke-width="2" marker-end="url(#arrowViolet)" />
+
+            <g>
+              <rect x="734" y="28" width="132" height="84" rx="10" fill="#122920" stroke="#34d399" />
+              <text x="800" y="54" text-anchor="middle" fill="#e6ecf7" font-size="12.5" font-weight="700">5. 确认 &amp; 清理</text>
+              <text x="800" y="74" text-anchor="middle" fill="#34d399" font-size="11">工作台解锁即写 ACK</text>
+              <text x="800" y="92" text-anchor="middle" fill="#93a2be" font-size="10.5">清理备份目录完成</text>
+            </g>
+
+            <!-- Rollback path -->
+            <path d="M 629 112 L 629 152 L 267 152 L 267 116" fill="none" stroke="#fb7185" stroke-width="1.8" stroke-dasharray="5 4" marker-end="url(#arrowAmber)" />
+            <rect x="330" y="138" width="236" height="24" rx="6" fill="#281620" stroke="#fb7185" />
+            <text x="448" y="154" text-anchor="middle" fill="#fb7185" font-size="11">启动失败或 45s 超时未就绪 → 自动回滚原备份 App</text>
+          </svg>
+        </div>
+
+        <div class="callout">
+          <strong>防提权与防篡改检查：</strong><code>CageUpdateInstaller</code> 启动后会严格验证 <code>plan.json</code> 所在目录属主为当前 UID 且权限掩码无 <code>0077</code> 暴露、校验 <code>plan.ParentPID == os.Getppid()</code>、比对父进程实际运行的 Bundle 路径，并用 Apple Security API 校验自身、备份包与候选包具有完全一致的 <code>TeamIdentifier</code>。
+        </div>
+      </section>
+
+      <!-- 08. Interactive Package Explorer -->
+      <section id="packages">
+        <div class="sec-head">
+          <h2><span class="sec-badge">08</span>代码目录全景地图</h2>
+        </div>
+        <div class="filter-bar">
+          <input type="search" id="pkgSearch" class="search-input" placeholder="搜索包名、路径或关键词（如 vnc / mihomo / herdr）..." />
+          <button class="tab-btn active" data-pkg-cat="all">全部</button>
+          <button class="tab-btn" data-pkg-cat="cmd">入口 cmd</button>
+          <button class="tab-btn" data-pkg-cat="ui">原生客户端</button>
+          <button class="tab-btn" data-pkg-cat="control">控制平面</button>
+          <button class="tab-btn" data-pkg-cat="vm">虚拟化与客机</button>
+          <button class="tab-btn" data-pkg-cat="security">安全与网络</button>
+          <button class="tab-btn" data-pkg-cat="remote">云端与移动端</button>
+        </div>
+        <div class="pkg-grid" id="pkgGrid"></div>
+      </section>
+
+      <!-- 09. Build & Packaging -->
+      <section id="build">
+        <div class="sec-head">
+          <h2><span class="sec-badge">09</span>双产品形态打包、依赖隔离与发布验证</h2>
+        </div>
+        <p class="sec-desc">
+          <code>mygo.config.ts</code> 与 <code>scripts/prepare-resources.sh</code> 支持从同一套代码库构建出“全功能本地隔离版”与“零虚拟化轻量云客户端版”，并通过自动化静态依赖断言与多级签名校验保障交付质量。
+        </p>
+
+        <div class="table-wrap" style="margin-bottom:16px;">
+          <table>
+            <thead>
+              <tr>
+                <th>构建形态</th>
+                <th>构建命令 / 环境变量</th>
+                <th>Bundle ID &amp; 产物</th>
+                <th>内嵌资源与权限特性</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Airlock 完整版</strong></td>
+                <td><code>make build-app</code><br/><code>make dmg</code></td>
+                <td><code>io.github.lee-xeo.claude-cage</code><br/><code>Airlock.app</code> / <code>.dmg</code></td>
+                <td>内嵌 <code>Resources/cage</code>（附 <code>third_party/lima/vz.entitlements</code> 虚拟化权限）、<code>mihomo</code>、<code>CageUpdateInstaller</code>、<code>lima-guestagent</code>（Linux/Darwin）、<code>cage-tailnet</code>、<code>guest-os</code> 套件与 <code>web-surface</code>。</td>
+              </tr>
+              <tr>
+                <td><strong>Airlock Client 轻量版</strong></td>
+                <td><code>make build-client</code><br/><code>CAGE_CLIENT_BUILD=1</code></td>
+                <td><code>io.github.lee-xeo.claude-cage-client</code><br/><code>Airlock Client.app</code></td>
+                <td>使用 <code>-tags cageclient</code> 编译 <code>cmd/cage-client</code>；构建脚本用 <code>go list -deps</code> 强断言<strong>零依赖</strong> <code>limaembed / vm / maclogin / Code-Hex/vz</code>，体积更小且免虚拟化权限，专注连接 Cloud SSH 主机。</td>
+              </tr>
+              <tr>
+                <td><strong>macOS 试用版</strong></td>
+                <td><code>CAGE_MACOS_TRIAL=1</code></td>
+                <td><code>io.github.lee-xeo.claude-cage.macos-trial</code><br/><code>Airlock macOS.app</code></td>
+                <td>独立 Profile 隔离配置路径，支持 <code>--store-trial-guest-password</code> CLI 通道写入 Keychain。</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="grid-2">
+          <div class="detail-card">
+            <h3>关键构建流水线 <span class="pill pill-cyan">Makefile + prepare-resources.sh</span></h3>
+            <pre><code>1. node scripts/build-web-surface.mjs   # 补丁 noVNC 并生成 embed 清单
+2. make assets                          # 交叉编译 Linux/Darwin lima-guestagent.gz
+3. make tailnet-assets                  # 编译 linux/amd64 &amp; arm64 cage-tailnet.gz
+4. scripts/fetch-proxy-core.sh          # 获取并校验内嵌 Mihomo 核心
+5. build cmd/cage + codesign (vz.entitlements)
+6. build cmd/cage-update-installer + codesign
+7. mygo build (cmd/cage-desktop) → 签名 / 公证 / DMG</code></pre>
+          </div>
+          <div class="detail-card">
+            <h3>测试与发布验证清单 <span class="pill pill-emerald">Zero-Regression</span></h3>
+            <pre><code># 全量 Go 单元测试 + MyGo Headless ui.NewTester 交互测试
+GOTOOLCHAIN=auto make test-go
+
+# 深度签名与虚拟化权限核验
+codesign --verify --deep --strict _output/dist/darwin-arm64/Airlock.app
+codesign -d --entitlements :- .../Contents/Resources/cage
+
+# 客机资产、VM 资产与 Web 清单自检
+.../Resources/cage verify-macos-guest
+.../Resources/cage verify-vm-assets
+.../Resources/cage verify-web-assets</code></pre>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    // ---------- Theme Toggle ----------
+    const rootEl = document.documentElement;
+    const themeToggle = document.getElementById("themeToggle");
+    const themeIcon = document.getElementById("themeIcon");
+    function setTheme(theme) {
+      rootEl.setAttribute("data-theme", theme);
+      themeIcon.textContent = theme === "dark" ? "DARK" : "LIGHT";
+      try { localStorage.setItem("airlock-arch-theme", theme); } catch {}
+    }
+    try {
+      const saved = localStorage.getItem("airlock-arch-theme");
+      if (saved === "light" || saved === "dark") setTheme(saved);
+    } catch {}
+    themeToggle.addEventListener("click", () => {
+      setTheme(rootEl.getAttribute("data-theme") === "dark" ? "light" : "dark");
+    });
+
+    // ---------- Interactive Architecture Inspector ----------
+    const archNodes = {
+      desktop: {
+        tag: "LAYER 1 · 桌面主入口",
+        tagClass: "pill-blue",
+        title: "MyGo 原生桌面壳与生命周期管理",
+        desc: "作为 Airlock.app 的主进程入口，负责窗口创建、菜单栏、单实例控制以及应用关闭时的安全退出保护。",
+        points: [
+          "调用 macnative.PinEnvironment() 锁定环境配置路径，再请求单实例锁 RequestSingleInstanceLock()；二次唤起自动聚焦已有窗口。",
+          "无边框沉浸式窗口（TitleBarHidden + VibrancySidebar + 自定义红绿灯坐标），关闭窗口默认 Hide() 驻留 Dock。",
+          "OnBeforeQuit 拦截退出：若本地隔离 VM 仍在运行，弹出原生确认框供选择“停止环境并退出”或“保持后台运行”。",
+          "注册 mygo.BindAs(\"VNCBridge\", vncBridge) 并启动 Store 与 AgentNativeLoop。"
+        ],
+        files: ["cmd/cage-desktop/main.go", "cmd/cage-desktop/menus.go", "cmd/cage-desktop/automation_e2e.go", "mygo.config.ts"]
+      },
+      views: {
+        tag: "LAYER 1 · 声明式原生 UI",
+        tagClass: "pill-blue",
+        title: "纯 Go 声明式工作台视图树",
+        desc: "完全使用 MyGo 原生组件（Column/Split/Button/Dialog）构建所有业务页面，具备原生性能、低内存占用与明暗主题同步。",
+        points: [
+          "支持侧边栏折叠、拖拽调整宽度（自动持久化）、全局快捷键（Cmd+N 新建 Claude、Cmd+T 新建 CLI、Cmd+, 偏好设置、Cmd+1..4 快速切换工作区）。",
+          "完整覆盖工作台概览、隔离浏览器、Mihomo 网络代理、安全检查、Claude 多账号调度、Tailscale 私网、Cloud SSH、保险箱与文件管理、通用/诊断/手机配对视图。",
+          "支持使用 MyGo ui.NewTester 进行无头自动化交互测试（views_test.go）。"
+        ],
+        files: ["internal/mygoclient/views/workbench_view.go", "internal/mygoclient/views/sidebar_view.go", "internal/mygoclient/views/proxy_view.go", "internal/mygoclient/views/claude_accounts_view.go", "internal/mygoclient/views/safety_view.go"]
+      },
+      surfaces: {
+        tag: "LAYER 1 · 多模态画布",
+        tagClass: "pill-cyan",
+        title: "三大隔离画布引擎（Terminal / macOS / VNC）",
+        desc: "根据目标环境类型分别选用最适合的渲染与输入方案，兼顾原生流畅度与跨平台兼容性。",
+        points: [
+          "终端：基于 Ghostty libghostty-vt，经 /api/terminals/{id}/stream WS 传输，内置 ANSI 剥离与 Claude OAuth 授权链接捕获、文件拖拽上传与隔离浏览器链接跳转。",
+          "macOS 客机：/frames 二进制位图流（4字节头长+JSON+像素+ACK流控）+ /connection 多路复用 JSON-RPC + MacOSIMETextClient 原生中文输入法合成。",
+          "Linux / Cloud SSH：VNCSurfaceManager 非阻塞异步管理极简 WKWebView 托管定制 noVNC，通过 VNCBridge 与 Go 零开销通信。"
+        ],
+        files: ["internal/mygoclient/surfaces/terminal_surface.go", "internal/mygoclient/surfaces/macos_surface.go", "internal/mygoclient/surfaces/vnc_surface.go", "web-surface/assets/vnc-surface.js"]
+      },
+      core_native: {
+        tag: "LAYER 1 · 状态、媒体与系统桥",
+        tagClass: "pill-violet",
+        title: "ControllerClient、多媒体引擎与 macOS Objective-C 层",
+        desc: "负责前后端通信鉴权、状态快照、48kHz 音频、双向剪贴板以及 macOS 特有的钥匙串与原子更新能力。",
+        points: [
+          "ControllerClient 负责查找内置 cage 可执行文件、执行 cage desktop --json、换取 HttpOnly Cookie 并注入 X-Cage-Connection 头。",
+          "AudioStream 通过 250ms 延迟上限的 float32 环形缓冲解码 48kHz 立体声 PCM 并接入 mygo/audio。",
+          "ClipboardSync 每 350ms 监测 NSPasteboard changeCount，双向同步文本、PNG（≤20MB）与文件并防回环。",
+          "native_darwin.m 封装 Touch ID Data Protection Keychain、NSPasteboard、Plist 解析与 SecStaticCode 签名校验。"
+        ],
+        files: ["internal/mygoclient/core/controller.go", "internal/mygoclient/core/store.go", "internal/mygoclient/core/audio.go", "internal/mygoclient/core/clipboard_sync.go", "internal/macnative/native_darwin.m"]
+      },
+      workbench: {
+        tag: "LAYER 2 · 本地控制平面",
+        tagClass: "pill-cyan",
+        title: "Workbench HTTP / WebSocket / SSE 控制服务器",
+        desc: "后台常驻的 Go HTTP 服务（监听 loopback），是所有工作台操作、隔离策略与资产调度的中枢。",
+        points: [
+          "集中提供 80+ 路由：环境启停、初始化、项目挂载、终端 PTY、浏览器标签/下载/上传、保险箱、Claude 多账号额度调度、诊断包导出。",
+          "严格的 Origin 校验、一次性 Ticket 兑换 Cookie（cage_session）、本地账户锁与恢复机制。",
+          "内置 jobManager 管理长耗时任务（安装/更新/启动），并通过状态轮询与 Browser SSE 推送实时反馈。"
+        ],
+        files: ["internal/workbench/server.go", "internal/workbench/account.go", "internal/workbench/claude_accounts.go", "internal/workbench/browser_service.go", "internal/workbench/diagnostics.go"]
+      },
+      remote_gateway: {
+        tag: "LAYER 2 · 上下文路由网关",
+        tagClass: "pill-cyan",
+        title: "统一本地与 Cloud SSH 远程路由网关",
+        desc: "使桌面端能用完全相同的 API 与 UI 无缝操作本地虚拟机和远程云主机。",
+        points: [
+          "依据请求头 X-Cage-Connection 判断目标：local 直接交由本地 Server 处理，其余 ID 转发给对应 remotehost.Session 的 SSH 隧道。",
+          "remotehost.Manager 维护显式连接状态机与 HostKey 验证，支持一键部署远端控制面且失败绝不静默切换主机。",
+          "同时兼容 Windows Server 与 Linux 云端工作台的终端、浏览器、音频、剪贴板与文件传输。"
+        ],
+        files: ["internal/workbench/desktop_gateway.go", "internal/remotehost/manager.go", "internal/remotehost/connector.go", "internal/remotehost/deploy.go"]
+      },
+      herdr_web: {
+        tag: "LAYER 2 · 协作桥与静态资产",
+        tagClass: "pill-amber",
+        title: "Herdr 受限宿主机 MCP 桥 & 内嵌 Web 表面",
+        desc: "连接客机内 AI 与宿主机受控 CLI Agent，同时通过 Go embed.FS 提供轻量 VNC 与移动端网页资产。",
+        points: [
+          "herdr_bridge.go 在宿主机随机 loopback 端口启动 MCP Server（POST /mcp JSON-RPC 2.0），通过隧道映射到客机 127.0.0.1:18520。",
+          "强制 Bearer Token 常量时间校验、Agent Profile 白名单、只读/工作区写模式控制，以及 PathResolver 目录授权校验。",
+          "internal/workbench/web/* 由 scripts/build-web-surface.mjs 生成并打包进二进制，提供 /vnc-surface.html 与 /mobile.html。"
+        ],
+        files: ["internal/herdrbridge/manager.go", "internal/herdrbridge/mcp.go", "internal/workbench/herdr_bridge.go", "web-surface/vnc-surface.html", "scripts/build-web-surface.mjs"]
+      },
+      vm_runtime: {
+        tag: "LAYER 3 · 虚拟化执行层",
+        tagClass: "pill-amber",
+        title: "Apple Virtualization macOS 客机 + Lima Linux 客机",
+        desc: "在 Apple Silicon 上提供原生级硬件虚拟化隔离，同时支持 macOS 与 Linux 两种隔离客机内核。",
+        points: [
+          "macOS 客机：基于 github.com/Code-Hex/vz/v3 与定制 Lima VZ 驱动，自动从 Apple CDN 下载并校验 SHA-256 IPSW 恢复镜像，支持 OffscreenView 自动登录与屏幕共享。",
+          "Linux 客机：内嵌裁剪版 third_party/lima、预编译并 gzip 压缩的 Linux/Darwin lima-guestagent 与模板。",
+          "通过 internal/guestos 与 internal/maclogin 管理客机身份、恢复维护、资源动态调整与健康检查。"
+        ],
+        files: ["internal/vm/lima.go", "internal/vm/driver_vz_darwin.go", "cmd/cage/mac_guest_vz_darwin_arm64.go", "internal/guestos/macos_profile.go", "internal/maclogin/login_darwin.go"]
+      },
+      net_mounts: {
+        tag: "LAYER 3 · 纵深防御沙箱",
+        tagClass: "pill-rose",
+        title: "NetGuard、Mihomo 托管代理、Mounts 与 Tailnet",
+        desc: "在主机边界对客机网络、代理与文件共享实施不可绕过的硬隔离策略。",
+        points: [
+          "NetGuard 在 hostagent netstack 拦截每条出站连接：封禁 Loopback、内网、CGNAT、FakeIP 及 NAT64/6to4/Teredo 内嵌私网地址。",
+          "ManagedProxy 仅调用应用内置 Mihomo，UDS 控制面 + mihomo -t 预校验 + 脱敏错误处理。",
+          "Mounts + GitGuard 禁止挂载敏感系统目录，并在 SFTP 共享中将 .git / .hg / .sl / .jj 强制设为只读。",
+          "内置独立编译的 tools/tailnet（cage-tailnet）支持客机安全接入 Tailscale 私网。"
+        ],
+        files: ["internal/netguard/netguard.go", "internal/managedproxy/core.go", "internal/mounts/safety.go", "internal/gitguard/scan.go", "tools/tailnet/main.go"]
+      },
+      cloud_mobile: {
+        tag: "LAYER 4 · 远程与移动生态",
+        tagClass: "pill-violet",
+        title: "Cloud SSH 套件与 Mobile Link 零信任中继",
+        desc: "打破单机边界：既能用轻客户端连云端工作台，也能用手机经由不可信公网中继端到端加密操控本机。",
+        points: [
+          "Mobile Link：主机与手机配对交换 32B Capability 与公钥 SPKI SHA-256 指纹，经公网 HTTPS/WS Relay 建房对接。",
+          "remotelink 在 WebSocket 二进制帧内封装 TLS 双向认证（ALPN: cage-remote/1）与 HTTP/2，Relay 零明文可见。",
+          "cmd/cage-relay 与 deploy/relay、deploy/cloud 提供完整的云端工作台与中继自托管部署能力。"
+        ],
+        files: ["internal/mobilelink/link.go", "internal/remotelink/link.go", "internal/relay/server.go", "cmd/cage-mobile-link/main.go", "cmd/cage-relay/main.go"]
+      }
+    };
+
+    const inspectorEl = document.getElementById("archInspector");
+    function renderInspector(key) {
+      const item = archNodes[key];
+      if (!item) return;
+      inspectorEl.innerHTML = `
+        <span class="inspector-tag ${item.tagClass}">${item.tag}</span>
+        <h3>${item.title}</h3>
+        <p>${item.desc}</p>
+        <ul class="inspector-list">
+          ${item.points.map(p => `<li>${p}</li>`).join("")}
+        </ul>
+        <div style="font-size:11.5px;color:var(--text-dim);font-family:var(--font-mono);margin-bottom:4px;">关键源码文件</div>
+        <div class="file-chips">
+          ${item.files.map(f => `<span class="chip">${f}</span>`).join("")}
+        </div>
+      `;
+    }
+
+    document.querySelectorAll(".arch-node").forEach(node => {
+      const activate = () => {
+        document.querySelectorAll(".arch-node").forEach(n => n.classList.remove("selected"));
+        node.classList.add("selected");
+        renderInspector(node.dataset.node);
+      };
+      node.addEventListener("click", activate);
+      node.addEventListener("keydown", e => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); activate(); }
+      });
+    });
+    renderInspector("desktop");
+
+    // ---------- Tabs ----------
+    document.querySelectorAll("[data-tab-group]").forEach(group => {
+      const buttons = group.querySelectorAll(".tab-btn");
+      buttons.forEach(btn => {
+        btn.addEventListener("click", () => {
+          const target = btn.dataset.tab;
+          buttons.forEach(b => b.classList.remove("active"));
+          btn.classList.add("active");
+          buttons.forEach(b => {
+            const panel = document.getElementById(b.dataset.tab);
+            if (panel) panel.classList.toggle("active", b.dataset.tab === target);
+          });
+        });
+      });
+    });
+
+    // ---------- Package Explorer ----------
+    const packages = [
+      { path: "cmd/cage-desktop/", cat: "cmd", badge: "入口", desc: "MyGo 原生 macOS 桌面端主程序：窗口、菜单栏、单实例锁、退出保护、HostBridge 与 E2E 挂载。" },
+      { path: "cmd/cage/", cat: "cmd", badge: "入口", desc: "全功能控制平面与 CLI：本地工作台服务、Apple VZ macOS 客机、Lima Linux 客机、代理与辅助命令。" },
+      { path: "cmd/cage-client/", cat: "cmd", badge: "入口", desc: "轻量远程客户端后端（-tags cageclient）：剥离所有虚拟化依赖，专用于连接 Cloud SSH 工作台。" },
+      { path: "cmd/cage-update-installer/", cat: "cmd", badge: "入口", desc: "独立签名的 macOS 原子更新安装器：负责备份旧版、等待退出、原子替换、启动确认与超时回滚。" },
+      { path: "cmd/cage-mobile-link/", cat: "cmd", badge: "入口", desc: "移动端链接与常亮守护工具，管理手机配对状态与远程工作台访问。" },
+      { path: "cmd/cage-relay/", cat: "cmd", badge: "入口", desc: "无状态/盲转发 WebSocket 中继服务端，为移动端 E2EE 链路提供公网 NAT 穿透房间。" },
+      { path: "cmd/cage-guest-files/", cat: "cmd", badge: "入口", desc: "客机文件传输与上传/下载桥接辅助命令。" },
+      { path: "cmd/agent-vm/", cat: "cmd", badge: "入口", desc: "底层 VM 启动与 GUI 兼容辅助入口。" },
+
+      { path: "internal/mygoclient/core/", cat: "ui", badge: "原生客户端", desc: "ControllerClient 会话认证、Store 聚合快照与 SSE、48kHz PCM 音频流、剪贴板双向同步、AgentNativeLoop。" },
+      { path: "internal/mygoclient/surfaces/", cat: "ui", badge: "原生客户端", desc: "三大交互画布：Ghostty 终端（OAuth 捕获/拖拽上传）、macOS 客机位图+IME、WKWebView noVNC + VNCBridge。" },
+      { path: "internal/mygoclient/views/", cat: "ui", badge: "原生客户端", desc: "全套原生视图：工作台、账户锁定、初始化向导、代理、安全、Claude 调度、Tailscale、Cloud SSH、保险箱与设置。" },
+      { path: "internal/macnative/", cat: "ui", badge: "macOS cgo", desc: "Objective-C 桥接层：Touch ID Keychain、NSPasteboard 读写与缓存追踪、Info.plist 解析、codesign 与 AppUpdater。" },
+      { path: "web-surface/", cat: "ui", badge: "轻量 Web", desc: "专供 WKWebView 托管的极简 vnc-surface.html / mobile.html 及定制 noVNC 补丁（像素滚轮、动态缩放、键盘映射）。" },
+
+      { path: "internal/workbench/", cat: "control", badge: "控制平面", desc: "核心 HTTP/WS/SSE 服务器、账户加密存储、本地/远程网关、终端管理、浏览器控制、Claude 多账号调度、保险箱与诊断导出。" },
+      { path: "internal/herdrbridge/", cat: "control", badge: "MCP 桥", desc: "受限宿主机 Agent MCP 桥接服务（JSON-RPC 2.0 / 2025-03-26）：Bearer 鉴权、Profile 白名单、目录授权与 herdr-core 交互。" },
+      { path: "internal/diagnostics/", cat: "control", badge: "可观测性", desc: "脱敏诊断日志流与一键诊断包（.zip）收集，兼顾排障效率与凭据隐私。" },
+      { path: "internal/clipboardfiles/", cat: "control", badge: "传输", desc: "宿主机与客机之间的剪贴板文件缓存分片与生命周期管理。" },
+
+      { path: "internal/vm/", cat: "vm", badge: "虚拟化", desc: "Lima 实例封装、Apple Virtualization (VZ) 驱动注册、QEMU/WSL2/HCS 跨平台驱动与磁盘/资源配置。" },
+      { path: "internal/limaembed/", cat: "vm", badge: "内嵌资产", desc: "内嵌预编译 gzip 压缩的 Linux/Darwin lima-guestagent 与 VM 模板，实现单文件免外部安装依赖。" },
+      { path: "internal/guestos/", cat: "vm", badge: "客机管理", desc: "macOS / Windows 客机安装、镜像恢复、身份配置、组件升级与存储维护。" },
+      { path: "internal/maclogin/", cat: "vm", badge: "macOS 客机", desc: "基于 VZ OffscreenView 与 Objective-C 桥接的 macOS 客机自动登录、屏幕抓取与维护模态交互。" },
+
+      { path: "internal/netguard/", cat: "security", badge: "网络隔离", desc: "hostagent 侧出站拦截引擎：默认仅允许公网，阻断本机/私网/CGNAT/FakeIP 及 NAT64/6to4/Teredo 内嵌私网地址。" },
+      { path: "internal/managedproxy/", cat: "security", badge: "代理核心", desc: "内置 Mihomo 核心全生命周期管理：UDS 控制面、mihomo -t 配置预校验、订阅导入与链式节点测速。" },
+      { path: "internal/mounts/", cat: "security", badge: "挂载安全", desc: "物理路径解析与危险目录禁挂校验，SFTP 共享中 .git/.hg/.sl/.jj 强制只读防宿主机逃逸。" },
+      { path: "internal/gitguard/", cat: "security", badge: "仓库防护", desc: "扫描并阻断危险 Git 链接工作树与潜在恶意仓库配置。" },
+      { path: "internal/hostproxy/", cat: "security", badge: "下载代理", desc: "宿主机侧大文件分片断点续传下载器（用于安全拉取 19.77GB macOS IPSW 等镜像）。" },
+
+      { path: "internal/remotehost/", cat: "remote", badge: "Cloud SSH", desc: "远程 Linux/Windows 主机配置库、SSH 隧道连接器、一键远端部署与显式故障隔离状态机。" },
+      { path: "internal/mobilelink/", cat: "remote", badge: "移动端", desc: "手机扫码配对、32B Capability 认证、中继房间协商与移动设备状态上报。" },
+      { path: "internal/remotelink/", cat: "remote", badge: "E2EE 传输", desc: "WebSocket 之上的 TLS 双向认证（cage-remote/1）与 SPKI SHA-256 公钥钉扎传输层。" },
+      { path: "internal/relay/", cat: "remote", badge: "中继服务", desc: "公网盲转发中继核心实现，无法窥探或篡改任何端到端加密业务流量。" },
+      { path: "tools/tailnet/", cat: "remote", badge: "私网", desc: "独立 Go 模块编译的 cage-tailnet 助手，为客机提供可控的 Tailscale 私网接入。" }
+    ];
+
+    const pkgGrid = document.getElementById("pkgGrid");
+    const pkgSearch = document.getElementById("pkgSearch");
+    let currentCat = "all";
+
+    function renderPackages() {
+      const q = pkgSearch.value.trim().toLowerCase();
+      const filtered = packages.filter(p => {
+        if (currentCat !== "all" && p.cat !== currentCat) return false;
+        if (!q) return true;
+        return p.path.toLowerCase().includes(q) || p.desc.toLowerCase().includes(q) || p.badge.toLowerCase().includes(q);
+      });
+      if (filtered.length === 0) {
+        pkgGrid.innerHTML = `<div style="color:var(--text-dim);font-size:14px;padding:12px;">没有匹配的模块，请尝试其他关键词。</div>`;
+        return;
+      }
+      pkgGrid.innerHTML = filtered.map(p => `
+        <div class="pkg-card">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:4px;">
+            <div class="pkg-path">${p.path}</div>
+            <span class="pill pill-blue">${p.badge}</span>
+          </div>
+          <div class="pkg-desc">${p.desc}</div>
+        </div>
+      `).join("");
+    }
+
+    document.querySelectorAll("[data-pkg-cat]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll("[data-pkg-cat]").forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+        currentCat = btn.dataset.pkgCat;
+        renderPackages();
+      });
+    });
+    pkgSearch.addEventListener("input", renderPackages);
+    renderPackages();
+
+    // ---------- Scroll Spy for TOC ----------
+    const tocLinks = Array.from(document.querySelectorAll("#tocList a"));
+    const sections = tocLinks.map(a => document.querySelector(a.getAttribute("href"))).filter(Boolean);
+    const observer = new IntersectionObserver(entries => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          const id = "#" + entry.target.id;
+          tocLinks.forEach(l => l.classList.toggle("active", l.getAttribute("href") === id));
+        }
+      });
+    }, { rootMargin: "-15% 0px -70% 0px", threshold: 0 });
+    sections.forEach(s => observer.observe(s));
+  </script>
+</body>
+</html>
