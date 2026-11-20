@@ -14,7 +14,7 @@ Airlock 为 macOS 提供安全、可控的隔离环境工作台（基于 [MyGo](
   - [`internal/mygoclient/views/`](internal/mygoclient/views/workbench_view.go)：原生工作台、账户锁定/创建/Touch ID、初始化向导、代理（Mihomo 订阅/链式路由/测速/连接审计）、安全门控、Claude 多账号额度调度、Tailscale、Cloud SSH 远程主机、密码保险箱/扩展/下载及手机配对二维码管理。
   - [`internal/macnative/`](internal/macnative/profile.go) & [`cmd/cage-update-installer/`](cmd/cage-update-installer/main.go)：macOS Keychain 快捷解锁（Touch ID / 记住登录 / 试用客机密码）、`NSPasteboard` 剪贴板读写与文件缓存清理、`codesign` 校验及原子 `.app` 更新安装器。
 - **隔离后端与客机能力（复用完整 macOS / Linux / Cloud 后端）**：
-  - Apple Virtualization 隔离 macOS 客机与 Lima Linux 客机（`cmd/cage`）
+  - Apple Virtualization 隔离 macOS 客机（基于内置 Lima，`cmd/cage`）与本地 Linux MicroVM（`internal/microvm`、`cmd/airlock-init`）
   - Cloud SSH 远程 Linux / Windows Server 工作台与轻量客户端（`cmd/cage-client`, `deploy/cloud`, `deploy/relay`, `tools/tailnet`）
 
 ## 环境要求
@@ -31,8 +31,10 @@ Airlock 为 macOS 提供安全、可控的隔离环境工作台（基于 [MyGo](
 # 1. 运行全量 Go 测试（含 headless MyGo ui.NewTester 交互测试、macnative、workbench 与 tailnet）
 GOTOOLCHAIN=auto make test-go
 
-# 2. 启动桌面开发模式
-GOTOOLCHAIN=auto make dev
+# 2. 启动桌面开发模式（本地 MicroVM，详见下文；增量重建过期的内嵌资源与 cage 辅助程序，首次运行自动全量准备）
+make dev
+# 需要强制刷新 resources/darwin-arm64（mihomo、CageUpdateInstaller、licenses）时
+make prepare-resources-fast && make dev
 
 # 3. 打包签名完整的 Airlock.app / Airlock.dmg 与轻量 Airlock Client.app
 GOTOOLCHAIN=auto make build-app
@@ -46,11 +48,11 @@ GOTOOLCHAIN=auto make build-client
 # 首次准备镜像，或修改 airlock-init / 镜像依赖后重新构建（需要 Docker）
 make microvm-image
 
-# 已有 _output/microvm-image 时，直接启动原生 App 开发模式
-make dev-microvm
+# 已有 _output/microvm-image 时，直接启动原生 App 开发模式（make dev-microvm 为同义别名）
+make dev
 ```
 
-`dev-microvm` 使用 Apple Virtualization 直接加载 `vmlinuz`、`initrd.img`、`rootfs.img` 和 `data.img`，打开独立的 MicroVM 开发版 App。首次使用先在 App 中创建本地账户，再点击“启动环境”；在工作台左上角“添加项目”中选择共享目录。镜像构建不接收项目路径，也不需要 `--project /path/to/your/project`。
+`make dev` 使用 Apple Virtualization 直接加载 `vmlinuz`、`initrd.img`、`rootfs.img` 和 `data.img`，打开独立的 MicroVM 开发版 App。首次使用先在 App 中创建本地账户，再点击“启动环境”；在工作台左上角“添加项目”中选择共享目录。镜像构建不接收项目路径，也不需要 `--project /path/to/your/project`。
 
 镜像默认安装 Node.js 22、npm 和 Claude Code。运行配置保存在 `~/.claude-cage-microvm-dev/`，每个配置使用自己的可写数据盘；用户主目录中的文件和登录状态随数据盘保留。未配置代理时可使用离线终端和目录共享，外网需配置代理并通过现有检查后开启。
 
@@ -58,10 +60,10 @@ make dev-microvm
 # 可选：使用另一套镜像或独立开发配置
 AIRLOCK_MICROVM_IMAGE_DIR=/absolute/path/to/microvm-image \
 AIRLOCK_MICROVM_CONFIG="$HOME/.airlock-another-dev/config.json" \
-make dev-microvm
+make dev
 ```
 
-MyGo 会监听 App 源码变化。修改后台 `cmd/cage` / `internal/workbench` 后，先在 App 中停止环境，退出开发命令，再运行 `make dev-microvm` 以重建后台。修改客机 init 后还需重新运行 `make microvm-image`；重建镜像前应停止使用该镜像的 VM。
+MyGo 会监听 App 源码变化。修改后台 `cmd/cage` / `internal/workbench` 后，先在 App 中停止环境，退出开发命令，再运行 `make dev` 以重建后台。修改客机 init 后还需重新运行 `make microvm-image`；重建镜像前应停止使用该镜像的 VM。
 
 当前 MicroVM 开发入口支持普通/Claude 终端、运行时项目共享、基础浏览器和 VNC。托管 Claude 多账号会话、浏览器扩展/保险箱/下载管理等高级功能尚未接入。
 

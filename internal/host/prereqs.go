@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"os/user"
-	"path/filepath"
 	"runtime"
 	"slices"
 	"strings"
@@ -119,66 +118,4 @@ func inGroup(name string) bool {
 	ids, _ := u.GroupIds()
 	g, err := user.LookupGroup(name)
 	return err == nil && slices.Contains(ids, g.Gid)
-}
-
-// WindowsPrereqs checks for QEMU and queries the Windows Hypervisor Platform
-// capability without elevation.
-// winget's QEMU does not add itself to PATH:
-// its default folder goes on PATH for this process. True elsewhere.
-func WindowsPrereqs(out, w io.Writer) bool {
-	if runtime.GOOS != "windows" {
-		return true
-	}
-	if err := ConfigureWindowsRuntime(); err != nil {
-		fmt.Fprintln(w, err)
-		return false
-	}
-	if err := windowsHypervisorReady(); err != nil {
-		fmt.Fprintln(w, err)
-		return false
-	}
-	bin, _ := qemuBinary()
-	_, imageErr := exec.LookPath("qemu-img")
-	if _, err := exec.LookPath(bin); err == nil && imageErr == nil {
-		return true
-	}
-	dir := os.Getenv("AGENT_VM_QEMU_DIR")
-	if dir == "" {
-		dir = `C:\Program Files\qemu`
-	}
-	if _, err := os.Stat(filepath.Join(dir, bin+".exe")); err == nil {
-		if _, err := os.Stat(filepath.Join(dir, "qemu-img.exe")); err == nil {
-			os.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-			return true
-		}
-	}
-	fmt.Fprintf(w, "Error: Lima needs '%s' on PATH (not found).\n  Install QEMU with: winget install -e --id SoftwareFreedomConservancy.QEMU\n  QEMU also needs the 'Windows Hypervisor Platform' Windows feature (see 'agent-vm doctor').\n", bin)
-	return false
-}
-
-// WHPXOn is what an administrator runs, once, then reboots, for QEMU to use
-// WHPX.
-const WHPXOn = "DISM /Online /Enable-Feature /FeatureName:HypervisorPlatform /All"
-
-// WindowsStartHint distinguishes an unavailable hypervisor from a QEMU
-// initialization failure on a host where WHPX is already enabled.
-func WindowsStartHint(w io.Writer, logs ...string) {
-	if runtime.GOOS != "windows" {
-		return
-	}
-	for _, l := range logs {
-		if b, err := os.ReadFile(l); err == nil && strings.Contains(strings.ToLower(string(b)), "whpx") {
-			if windowsHypervisorReady() == nil {
-				fmt.Fprintln(w, "Windows Hypervisor Platform is enabled, but QEMU could not initialize WHPX. Check the original QEMU error and any custom QEMU arguments; Cage uses kernel-irqchip=off for WHPX compatibility.")
-				return
-			}
-			fmt.Fprintf(w, `QEMU could not use the Windows hypervisor. It needs the "Windows Hypervisor
-Platform" Windows feature, which an administrator turns on once, followed by
-a reboot: in Windows Features, or from an administrator terminal:
-  %s
-On a managed laptop, that is a request to your IT department.
-`, WHPXOn)
-			return
-		}
-	}
 }

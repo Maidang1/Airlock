@@ -7,7 +7,6 @@
 package paths
 
 import (
-	"os"
 	"runtime"
 	"strings"
 	"unicode/utf8"
@@ -24,15 +23,6 @@ func Host(p string) string {
 		return strings.ReplaceAll(p, `\`, "/")
 	}
 	return p
-}
-
-// Home is the user's home folder, spelled as Host does; "" when unknown.
-func Home() string {
-	h, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-	return Host(h)
 }
 
 // Real is p with its links resolved (including directory junctions), spelled as
@@ -62,41 +52,6 @@ func Root(p string) string {
 	return p[:volume(p)] + "/"
 }
 
-// Join is dir/p, with "." and ".." resolved in the text, as `cd` does: a
-// path that only goes through dir on its way out of it (../x) names a file
-// outside. The root ("/", "C:/") when nothing is left: ".." stops there.
-func Join(dir, p string) string {
-	v := volume(dir)
-	drive, out := dir[:v], strings.TrimSuffix(dir[v:], "/")
-	for _, comp := range strings.Split(p, "/") {
-		switch comp {
-		case "", ".":
-		case "..":
-			if i := strings.LastIndexByte(out, '/'); i >= 0 {
-				out = out[:i]
-			} else {
-				out = ""
-			}
-		default:
-			out += "/" + comp
-		}
-	}
-	if out == "" {
-		return drive + "/"
-	}
-	return drive + out
-}
-
-// Abs is p made absolute against dir, as Join, an absolute p against its
-// root.
-func Abs(dir, p string) string {
-	if IsAbs(p) {
-		r := Root(p)
-		return Join(r, p[len(r):])
-	}
-	return Join(dir, p)
-}
-
 // Guest is the host path p as 0.2 spelled it, which is the path the VM sees
 // it at, and which VM names hash: as is, but for Windows, where Git Bash
 // spelled C:\Users\x as /c/Users/x.
@@ -105,16 +60,6 @@ func Guest(p string) string {
 		return p
 	}
 	return "/" + strings.ToLower(p[:1]) + strings.ReplaceAll(p[2:], `\`, "/")
-}
-
-// FromGitBash is p, on Windows, with Git Bash's spelling of a drive (/c/x,
-// as 0.2's volumes file has it) made a drive again (C:/x); as is
-// elsewhere.
-func FromGitBash(p string) string {
-	if !Windows() || len(p) < 2 || p[0] != '/' || !('a' <= p[1]|0x20 && p[1]|0x20 <= 'z') || (len(p) > 2 && p[2] != '/') {
-		return p
-	}
-	return strings.ToUpper(p[1:2]) + ":" + Join("/", p[2:])
 }
 
 // NoCase reports whether this host's file systems ignore case by default:
@@ -159,18 +104,4 @@ func CutPrefix(s, prefix string) (string, bool) {
 		i += n
 	}
 	return s[i:], true
-}
-
-// In is p relative to dir, "." for dir itself, compared as the file system
-// does; false when p is not inside dir.
-func In(p, dir string) (string, bool) {
-	p, dir = strings.TrimSuffix(p, "/"), strings.TrimSuffix(dir, "/")
-	if Equal(p, dir) {
-		return ".", true
-	}
-	if dir == "" {
-		return "", false
-	}
-	rest, ok := CutPrefix(p, dir+"/")
-	return rest, ok
 }

@@ -4,12 +4,13 @@ import (
 	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
-	"github.com/google/uuid"
-	"golang.org/x/crypto/ssh"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/google/uuid"
+	"golang.org/x/crypto/ssh"
 )
 
 func TestInstallationKeepsChoiceAndRefusesToClearVM(t *testing.T) {

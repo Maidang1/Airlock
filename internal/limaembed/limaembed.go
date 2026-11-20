@@ -31,7 +31,6 @@ import (
 	"github.com/sylvinus/agent-vm/internal/guestos"
 	"github.com/sylvinus/agent-vm/internal/netguard"
 	"github.com/sylvinus/agent-vm/internal/state"
-	"github.com/sylvinus/agent-vm/internal/vmname"
 )
 
 // Run runs args (os.Args[1:]) when they are a command Lima's libraries start
@@ -99,36 +98,26 @@ func Run(args []string) bool {
 		}
 		usernet.Names, usernet.Answered = nil, nil
 		dns.Names, dns.Answered = nil, nil
+		// Every VM starts with the external gate closed.
 		name := args[len(args)-1]
-		if name == vmname.Template+"-building" {
-			// The base builder installs trusted tooling before any project is
-			// mounted. Project VMs always start with the external gate closed.
-			egress, err := cage.NewEgress(cfg)
-			if err != nil {
-				logrus.Fatal(err)
-			}
-			usernet.Outbound, usernet.GuestDial = egress.Allows, egress.DialContext
-			usernet.DNSExchange, dns.Exchange = egress.ExchangeDNS, egress.ExchangeDNS
-		} else {
-			gate, err := cage.NewEgressGate(cfg)
-			if err != nil {
-				logrus.Fatal(err)
-			}
-			if stopGateControl, err = cage.StartGateControl(path, filepath.Join(string(st), "lima", name), gate); err != nil {
-				logrus.Fatal(err)
-			}
-			if name == "mac" {
-				// The installed Mac profile binds this exact VZ instance. Other
-				// workloads retain their existing switch behavior.
-				if binding, err := guestos.LoadMacOSProfile(filepath.Dir(path)); err != nil {
-					logrus.Fatal(err)
-				} else if binding != nil && binding.Instance == name {
-					usernet.DroppedIPv6 = gate.ObserveDroppedIPv6
-				}
-			}
-			usernet.Outbound, usernet.GuestDial = gate.Allows, gate.DialContext
-			usernet.DNSExchange, dns.Exchange = gate.ExchangeDNS, gate.ExchangeDNS
+		gate, err := cage.NewEgressGate(cfg)
+		if err != nil {
+			logrus.Fatal(err)
 		}
+		if stopGateControl, err = cage.StartGateControl(path, filepath.Join(string(st), "lima", name), gate); err != nil {
+			logrus.Fatal(err)
+		}
+		if name == "mac" {
+			// The installed Mac profile binds this exact VZ instance. Other
+			// workloads retain their existing switch behavior.
+			if binding, err := guestos.LoadMacOSProfile(filepath.Dir(path)); err != nil {
+				logrus.Fatal(err)
+			} else if binding != nil && binding.Instance == name {
+				usernet.DroppedIPv6 = gate.ObserveDroppedIPv6
+			}
+		}
+		usernet.Outbound, usernet.GuestDial = gate.Allows, gate.DialContext
+		usernet.DNSExchange, dns.Exchange = gate.ExchangeDNS, gate.ExchangeDNS
 		if err := cfg.RecordRunning(string(st), args[len(args)-1]); err != nil {
 			logrus.Fatal(err)
 		}

@@ -12,14 +12,13 @@ import (
 )
 
 type guestOptionsView struct {
-	LinuxSystems  []string `json:"linux_systems"`
-	HostMatchOnly bool     `json:"host_match_only"`
-	Reselect      bool     `json:"reselect"`
-	System        string   `json:"system"`
-	Available     bool     `json:"available"`
-	Reason        string   `json:"reason"`
-	Fresh         bool     `json:"fresh"`
-	Activate      bool     `json:"activate"`
+	HostMatchOnly bool   `json:"host_match_only"`
+	Reselect      bool   `json:"reselect"`
+	System        string `json:"system"`
+	Available     bool   `json:"available"`
+	Reason        string `json:"reason"`
+	Fresh         bool   `json:"fresh"`
+	Activate      bool   `json:"activate"`
 	Pending       *struct {
 		System string `json:"system"`
 		ID     string `json:"id"`
@@ -83,8 +82,6 @@ func (r *RootView) refreshOnboardingOptions() {
 				st.selectedOS = opts.Pending.System
 			} else if opts.System != "" && opts.Available {
 				st.selectedOS = opts.System
-			} else if len(opts.LinuxSystems) > 0 {
-				st.selectedOS = opts.LinuxSystems[0]
 			}
 		}
 		st.mu.Unlock()
@@ -145,7 +142,6 @@ func (r *RootView) renderOnboarding(c *ui.Context, pal Palette, snap core.Snapsh
 					if opts.System != "" && opts.Available {
 						choices = append(choices, opts.System)
 					}
-					choices = append(choices, opts.LinuxSystems...)
 					if len(choices) > 0 && opts.Pending == nil {
 						ui.Row(c).Gap(10).AlignItems(ui.Center).FillWidth().Children(func() {
 							ui.Text(c, "客机系统镜像").FontSize(12).TextColor(pal.Muted)

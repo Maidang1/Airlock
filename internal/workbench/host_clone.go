@@ -21,23 +21,13 @@ func (s *Server) hostClonePlan(ctx context.Context) (hostimage.Plan, error) {
 	if err != nil {
 		return hostimage.Plan{}, err
 	}
-	var template []byte
-	if hostimage.IsLinux(identity.System) {
-		template, err = readLimaImageTemplate(identity.System)
-		if err != nil {
-			return hostimage.Plan{}, err
-		}
-	}
 	cache := filepath.Join(s.profile, "state", "guest-media", identity.System)
 	transport := hostproxy.NewTransport()
 	defer transport.CloseIdleConnections()
-	return hostimage.Resolve(ctx, identity, cache, filepath.Join(home, "Downloads"), template, transport)
+	return hostimage.Resolve(ctx, identity, cache, filepath.Join(home, "Downloads"), nil, transport)
 }
 
 func hostCloneSystemReserve(plan hostimage.Plan) int {
-	if hostimage.IsLinux(plan.Host.System) {
-		return 16
-	}
 	// Intel stages the full installer inside the new disk in addition to the
 	// installed system and development tools.
 	if plan.Host.System == "macos" && plan.Host.Arch == "amd64" {
@@ -58,10 +48,6 @@ func (s *Server) hostClone(w http.ResponseWriter, r *http.Request) {
 	}
 	if !view.Available || (!view.Fresh && view.Pending == nil) {
 		requestError(w, errors.New("当前环境无法创建新的本机系统"))
-		return
-	}
-	if view.Pending != nil && view.Pending.SourceKind == "linux-image" {
-		requestError(w, errors.New("请继续已选择的 Ubuntu 安装，不能改为自动匹配本机系统版本"))
 		return
 	}
 	var plan hostimage.Plan

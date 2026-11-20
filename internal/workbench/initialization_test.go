@@ -50,17 +50,11 @@ func TestInitializationPersistsBeforeDiskCreationAndDoesNotResetExisting(t *test
 			t.Fatal(w.Code, w.Body.String())
 		}
 	}
-	if err := os.MkdirAll(filepath.Join(s.profile, "state"), 0700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(s.profile, "state", ".agent-vm-base-version"), []byte("fixture"), 0600); err != nil {
-		t.Fatal(err)
-	}
 	view := read()
 	if !view.Required || !view.Started || !view.Tracked {
 		t.Fatalf("partial installation bypassed durable state: %+v", view)
 	}
-	// A new controller sees the same state, even after creating its base disk.
+	// A new controller sees the same state.
 	restarted := testServer(t)
 	restarted.profile = s.profile
 	if next, err := restarted.initializationState(); err != nil || !next.Required || !next.Started {
@@ -69,8 +63,8 @@ func TestInitializationPersistsBeforeDiskCreationAndDoesNotResetExisting(t *test
 	if err := os.Remove(filepath.Join(s.profile, "initialization.json")); err != nil {
 		t.Fatal(err)
 	}
-	if read().Required {
-		t.Fatal("existing Linux installation forced to reinstall")
+	if !read().Required {
+		t.Fatal("profile without an installed guest skipped initialization")
 	}
 	s.windowsGuest = &guestos.WindowsProfile{}
 	if next, err := s.initializationState(); err != nil || next.Required {

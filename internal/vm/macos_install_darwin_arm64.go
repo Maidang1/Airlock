@@ -61,9 +61,6 @@ func (l *Lima) CreateMacOSFromIPSW(ctx context.Context, name, imagePath string, 
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if settings.Mounts != nil && len(*settings.Mounts) != 0 {
-		return errors.New("macOS installation does not accept shared host directories")
-	}
 	if err := dirnames.ValidateInstName(name); err != nil {
 		return err
 	}

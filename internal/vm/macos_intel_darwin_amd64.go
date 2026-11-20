@@ -295,9 +295,6 @@ func (l *Lima) CreateIntelMacOS(ctx context.Context, name string, media IntelMac
 	if err != nil || id == uuid.Nil || id.String() != media.UUID {
 		return errors.New("invalid Intel macOS machine UUID")
 	}
-	if settings.Mounts != nil && len(*settings.Mounts) != 0 {
-		return errors.New("Intel macOS does not accept host mounts")
-	}
 	if settings.CPUs == 0 {
 		settings.CPUs = 4
 	}

@@ -11,7 +11,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -22,7 +21,6 @@ import (
 	"github.com/coreos/go-semver/semver"
 	"github.com/mattn/go-isatty"
 	"github.com/sirupsen/logrus"
-	"github.com/sylvinus/agent-vm/internal/guestprofile"
 
 	"github.com/lima-vm/lima/v2/pkg/driver/external/server"
 	"github.com/lima-vm/lima/v2/pkg/driverutil"
@@ -34,11 +32,9 @@ import (
 	"github.com/lima-vm/lima/v2/pkg/limatype/filenames"
 	"github.com/lima-vm/lima/v2/pkg/limayaml"
 	"github.com/lima-vm/lima/v2/pkg/networks/reconcile"
-	"github.com/lima-vm/lima/v2/pkg/osutil"
 	"github.com/lima-vm/lima/v2/pkg/sshutil"
 	"github.com/lima-vm/lima/v2/pkg/store"
 	"github.com/lima-vm/lima/v2/pkg/yqutil"
-	"github.com/sylvinus/agent-vm/internal/vmname"
 
 	"github.com/sylvinus/agent-vm/internal/cage"
 	"github.com/sylvinus/agent-vm/internal/limaembed"
@@ -56,48 +52,19 @@ type Lima struct {
 	err   error
 }
 
-// MaxName is the longest VM name whose sockets fit under the Lima home
-// home (UNIX_PATH_MAX: 104 bytes on macOS), and Lima's 76 at most. Lima
-// resolves the home's symlinks: so does this, as far as it exists.
-func MaxName(home string) int {
-	stable := os.Getenv("CAGE_LOGICAL_LIMA_HOME")
-	return int(vmname.HomeLimit(home, stable != "" && filepath.Clean(home) == filepath.Clean(stable)))
-}
-
 // NewLima keeps its VMs in home (LIMA_HOME), and writes Lima's guest agent
 // and templates under stateDir.
 func NewLima(home, stateDir string) (*Lima, error) {
 	limaHomeMu.Lock()
 	defer limaHomeMu.Unlock()
-	// A value other than the one set earlier here is the user's.
-	if cur := os.Getenv("LIMA_HOME"); cur != limaHomeSet {
-		userLimaHome = cur
-	}
 	if err := os.Setenv("LIMA_HOME", home); err != nil {
 		return nil, err
 	}
-	limaHomeSet = home
 	return &Lima{stateDir: stateDir}, nil
 }
 
-var (
-	limaHomeMu sync.Mutex
-	// limaHomeSet is the LIMA_HOME NewLima set for Lima's packages.
-	limaHomeSet string
-	// userLimaHome is the LIMA_HOME the process started with.
-	userLimaHome string
-)
-
-// UserLimaHome is the user's own LIMA_HOME, "" when unset. It is only known
-// once NewLima has run, which replaces it for Lima's packages.
-func UserLimaHome() string {
-	limaHomeMu.Lock()
-	defer limaHomeMu.Unlock()
-	if limaHomeSet == "" {
-		return os.Getenv("LIMA_HOME")
-	}
-	return userLimaHome
-}
+// limaHomeMu serializes NewLima's change of LIMA_HOME for Lima's packages.
+var limaHomeMu sync.Mutex
 
 // prepare writes the embedded share once, and points Lima's template store
 // at it. It refuses Lima's default.yaml and override.yaml, which Lima mixes
@@ -121,21 +88,6 @@ func (l *Lima) prepare() (*limaembed.Share, error) {
 		return nil, fmt.Errorf("%w: %s", ErrLimaOverrides, strings.Join(found, ", "))
 	}
 	return l.share, nil
-}
-
-// Confined fails unless every share of inst is served by the builtin SFTP
-// server, over reverse-sshfs: the one server confined to its folder. No
-// other way into the host is started.
-func Confined(inst *Instance) error {
-	for _, m := range inst.Mounts {
-		if m.SSHFS == nil || m.SSHFS.SFTPDriver != "builtin" {
-			return fmt.Errorf("%w: the share of %s is not served by the builtin SFTP server", ErrUnconfined, m.Location)
-		}
-	}
-	if len(inst.Mounts) > 0 && inst.MountType != ReverseSSHFS {
-		return fmt.Errorf("%w: the mount type is %q, not %s", ErrUnconfined, inst.MountType, ReverseSSHFS)
-	}
-	return nil
 }
 
 // LimaOverrides are the default.yaml and override.yaml found in the Lima
@@ -219,26 +171,8 @@ func fromLima(inst *limatype.Instance) *Instance {
 	// this one.
 	out.Orphaned = out.Status == Broken && inst.Config != nil && inst.HostAgentPID == 0 && inst.DriverPID > 0 &&
 		inst.VMType == limatype.QEMU && isQEMU(inst.DriverPID, inst.Dir, inst.Name)
-	if c := inst.Config; c != nil {
-		if c.SSH.LocalPort != nil {
-			out.SSHPortConfig = *c.SSH.LocalPort
-		}
-		if c.MountType != nil {
-			out.MountType = *c.MountType
-		}
-		for _, m := range c.Mounts {
-			mm := Mount{Location: paths.Host(m.Location), Writable: m.Writable != nil && *m.Writable}
-			if m.MountPoint != nil {
-				mm.MountPoint = *m.MountPoint
-			}
-			if s := m.SSHFS; s.SFTPDriver != nil || s.Cache != nil || len(s.ReadonlyNames) > 0 {
-				mm.SSHFS = &SSHFS{Cache: s.Cache, ReadonlyNames: s.ReadonlyNames}
-				if s.SFTPDriver != nil {
-					mm.SSHFS.SFTPDriver = string(*s.SFTPDriver)
-				}
-			}
-			out.Mounts = append(out.Mounts, mm)
-		}
+	if c := inst.Config; c != nil && c.SSH.LocalPort != nil {
+		out.SSHPortConfig = *c.SSH.LocalPort
 	}
 	return out
 }
@@ -274,28 +208,6 @@ func exprs(s Settings) ([]string, error) {
 		// rule that matches); one made earlier is replaced, not repeated.
 		e = append(e, fmt.Sprintf(`.portForwards = ((.portForwards // []) | map(select(((.guestPortRange // []) | join("-")) != "%d-%d"))) + [{"guestIP": "0.0.0.0", "guestIPMustBeZero": false, "guestPortRange": [%d, %d], "proto": "any", "ignore": true}]`, ephemeralPorts[0], ephemeralPorts[1], ephemeralPorts[0], ephemeralPorts[1]))
 	}
-	if s.MountType != nil {
-		if *s.MountType == "" {
-			e = append(e, "del(.mountType)")
-		} else {
-			e = append(e, fmt.Sprintf(".mountType = %q", *s.MountType))
-		}
-	}
-	if s.Mounts != nil {
-		mounts := *s.Mounts
-		if mounts == nil {
-			mounts = []Mount{}
-		}
-		// yq reads the JSON's strings without its \u escapes: none for & < >
-		// (what else JSON escapes, the paths cannot hold: see sharesKept).
-		var j bytes.Buffer
-		enc := json.NewEncoder(&j)
-		enc.SetEscapeHTML(false)
-		if err := enc.Encode(mounts); err != nil {
-			return nil, err
-		}
-		e = append(e, ".mounts = "+strings.TrimSuffix(j.String(), "\n"))
-	}
 	return e, nil
 }
 
@@ -326,45 +238,25 @@ func (l *Lima) Create(ctx context.Context, name, template string, s Settings, lo
 		if err != nil {
 			return err
 		}
+		// Local Linux guests run as MicroVMs; Lima only creates virtual Macs.
+		if tmpl.Config.OS == nil || *tmpl.Config.OS != limatype.DARWIN {
+			return errors.New("Lima creates only macOS guests; local Linux environments run as MicroVMs")
+		}
 		if path := os.Getenv(cage.ConfigEnv); path != "" {
 			cfg, err := cage.Load(path)
 			if err != nil {
 				return err
 			}
-			profile := cfg.GuestProfile
-			if profile != nil && profile.GPUBackend == "virgl" {
-				if runtime.GOOS != "linux" || tmpl.Config.OS != nil && *tmpl.Config.OS != limatype.LINUX {
-					return errors.New("VirGL requires a Linux host and Linux QEMU guest")
-				}
-				if err := CheckVirGLHost(); err != nil {
-					return err
-				}
-				e = append(e, `.vmType = "qemu"`, `.video.display = "egl-headless"`)
-			}
-			if profile != nil {
+			if profile := cfg.GuestProfile; profile != nil {
 				identity.Hostname = profile.Hostname
-			}
-			if template == "template:debian-13" {
-				images, err := cageDebianImages(tmpl.Config.Images)
-				if err != nil {
-					return err
-				}
-				e = append(e, ".images = "+string(images))
-				// cloud-init rewrites Debian's mirror list after bootcmd.
-				// Configure it immediately before Lima installs dependencies.
-				e = append(e, `.provision += [{"mode": "dependency", "script": `+strconv.Quote(cage.DebianPrepareScript)+`}]`)
 			}
 			tz, _ := json.Marshal(cfg.Timezone)
 			e = append(e, ".propagateProxyEnv = false", `.env = {"http_proxy":"","https_proxy":"","ftp_proxy":"","no_proxy":"","HTTP_PROXY":"","HTTPS_PROXY":"","FTP_PROXY":"","NO_PROXY":"","ALL_PROXY":"","all_proxy":""}`, ".timezone = "+string(tz))
-			if tmpl.Config.OS != nil && *tmpl.Config.OS == limatype.DARWIN {
-				uid := 501
-				if tmpl.Config.User.UID != nil && *tmpl.Config.User.UID >= 501 && *tmpl.Config.User.UID <= 599 {
-					uid = int(*tmpl.Config.User.UID)
-				}
-				e = append(e, `.user.name = "cageprovision"`, `.user.home = "/Users/cageprovision"`, `.user.comment = "Cage Provisioning"`, fmt.Sprintf(".user.uid = %d", uid), `.video.display = "offscreen"`)
-			} else {
-				e = append(e, `.user.name = `+strconv.Quote(profile.WorkUser()), `.user.home = `+strconv.Quote(profile.WorkHomePath()), `.user.comment = ""`, ".user.uid = 1000")
+			uid := 501
+			if tmpl.Config.User.UID != nil && *tmpl.Config.User.UID >= 501 && *tmpl.Config.User.UID <= 599 {
+				uid = int(*tmpl.Config.User.UID)
 			}
+			e = append(e, `.user.name = "cageprovision"`, `.user.home = "/Users/cageprovision"`, `.user.comment = "Cage Provisioning"`, fmt.Sprintf(".user.uid = %d", uid), `.video.display = "offscreen"`)
 		}
 		data, err := json.Marshal(identity)
 		if err != nil {
@@ -377,60 +269,6 @@ func (l *Lima) Create(ctx context.Context, name, template string, s Settings, lo
 		_, err = instance.Create(ctx, name, tmpl.Bytes, false)
 		return err
 	})
-}
-
-// All three locations must supply the exact release pinned by the embedded
-// template. In particular, never accept an unpinned daily image on fallback.
-func cageDebianImages(images []limatype.Image) ([]byte, error) {
-	const upstream = "https://cloud.debian.org/images/cloud/"
-	var candidates []limatype.Image
-	for _, img := range images {
-		suffix, ok := strings.CutPrefix(img.Location, upstream)
-		if !ok || img.Variant != "genericcloud" || img.Digest.Validate() != nil || img.Digest.Algorithm() != "sha512" {
-			continue
-		}
-		for _, base := range []string{upstream, "https://mirrors.nju.edu.cn/debian-cdimage/cloud/", "https://mirrors.ustc.edu.cn/debian-cdimage/cloud/"} {
-			candidate := img
-			candidate.Location = base + suffix
-			candidates = append(candidates, candidate)
-		}
-	}
-	if len(candidates) == 0 {
-		return nil, errors.New("embedded Debian template contains no pinned cloud image")
-	}
-	return json.Marshal(candidates)
-}
-
-func (l *Lima) Clone(ctx context.Context, from, to string) error {
-	inst, err := l.inspect(ctx, from)
-	if err != nil {
-		return err
-	}
-	dir, err := dirnames.InstanceDir(to)
-	switch {
-	case err != nil && strings.Contains(err.Error(), "maximum length"):
-		return fmt.Errorf("%w: %v", ErrNameTooLong, err)
-	case err != nil:
-		return err
-	}
-	if sock := filepath.Join(dir, filenames.LongestSock); len(sock) >= osutil.UnixPathMax {
-		return fmt.Errorf("%w: its sockets in %s would need %d characters, at most %d", ErrNameTooLong, filepath.Dir(dir), len(sock), osutil.UnixPathMax-1)
-	}
-	identity, err := guestidentity.New()
-	if err != nil {
-		return err
-	}
-	if path := os.Getenv(cage.ConfigEnv); path != "" {
-		profile, e := guestprofile.Load(filepath.Dir(path))
-		if e != nil {
-			return e
-		}
-		if profile != nil {
-			identity.Hostname = profile.Hostname
-		}
-	}
-	_, err = instance.CloneWithIdentity(ctx, inst, to, identity)
-	return err
 }
 
 // Edit applies s as `limactl edit` does: the same checks, and nothing is
@@ -462,11 +300,6 @@ func (l *Lima) Edit(ctx context.Context, name string, s Settings) error {
 	cfg, err := limayaml.LoadWithWarnings(ctx, y, path)
 	if err != nil {
 		return err
-	}
-	if s.Mounts != nil {
-		if err := sharesKept(*s.Mounts, cfg.Mounts); err != nil {
-			return err
-		}
 	}
 	if err := driverutil.ResolveVMType(cfg); err != nil {
 		return err
@@ -510,29 +343,6 @@ func (l *Lima) Edit(ctx context.Context, name string, s Settings) error {
 		os.Remove(tmp)
 	}
 	return err
-}
-
-// sharesKept fails unless Lima reads every share as written: it expands Go
-// templates in their paths ({{.Home}}), and yq keeps JSON's \u escapes as
-// text, so another folder than the one asked for would be shared.
-func sharesKept(want []Mount, got []limatype.Mount) error {
-	if len(got) != len(want) {
-		return fmt.Errorf("%w: Lima reads %d shares, not %d", ErrUnmountable, len(got), len(want))
-	}
-	for i, m := range want {
-		mp := m.MountPoint
-		if mp == "" {
-			mp = m.Location
-		}
-		// Lima makes a location absolute with filepath.Abs: C:\x on Windows.
-		if paths.Host(got[i].Location) != m.Location || got[i].MountPoint == nil || *got[i].MountPoint != mp {
-			return fmt.Errorf("%w: Lima reads %q as another path", ErrUnmountable, m.Location)
-		}
-		if m.SSHFS != nil && !slices.Equal(got[i].SSHFS.ReadonlyNames, m.SSHFS.ReadonlyNames) {
-			return fmt.Errorf("%w: Lima reads the read-only names of %q otherwise", ErrUnmountable, m.Location)
-		}
-	}
-	return nil
 }
 
 // logMu keeps two calls from taking logrus's output from each other.
@@ -629,20 +439,19 @@ func (l *Lima) Start(ctx context.Context, name string, log io.Writer) error {
 	if inst, err = l.inspect(ctx, name); err != nil {
 		return err
 	}
-	if err := Confined(fromLima(inst)); err != nil {
-		return err
+	if *inst.Config.OS != limatype.DARWIN {
+		return fmt.Errorf("VM %s is not a macOS guest; local Linux environments run as MicroVMs", name)
+	}
+	if len(inst.Config.Mounts) != 0 {
+		return fmt.Errorf("VM %s shares host folders, which macOS guests never do", name)
 	}
 	if err := NetworkConfined(inst.Config); err != nil {
 		return err
 	}
-	var guestAgent string
-	// Lima always needs the Darwin helper for first boot. Windows and FreeBSD
-	// have no guest agent, and Linux plain mode works without one.
-	if *inst.Config.OS == limatype.DARWIN || (*inst.Config.OS == limatype.LINUX && !*inst.Config.Plain) {
-		guestAgent, err = share.GuestAgent(*inst.Config.OS, *inst.Config.Arch)
-		if err != nil {
-			return err
-		}
+	// Lima always needs the Darwin helper for first boot.
+	guestAgent, err := share.GuestAgent(*inst.Config.OS, *inst.Config.Arch)
+	if err != nil {
+		return err
 	}
 	return withLog(quietBootLog{log}, func() error {
 		if err := reconcile.Reconcile(ctx, name); err != nil {

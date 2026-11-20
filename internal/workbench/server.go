@@ -9,11 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/sylvinus/agent-vm/internal/cage"
-	"github.com/sylvinus/agent-vm/internal/diagnostics"
-	"github.com/sylvinus/agent-vm/internal/guestos"
-	"github.com/sylvinus/agent-vm/internal/host"
-	"github.com/sylvinus/agent-vm/internal/hostimage"
 	"io"
 	"io/fs"
 	"log"
@@ -28,6 +23,13 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+
+	"github.com/sylvinus/agent-vm/internal/cage"
+	"github.com/sylvinus/agent-vm/internal/containerenv"
+	"github.com/sylvinus/agent-vm/internal/diagnostics"
+	"github.com/sylvinus/agent-vm/internal/guestos"
+	"github.com/sylvinus/agent-vm/internal/hostimage"
+	"github.com/sylvinus/agent-vm/internal/host"
 )
 
 //go:embed web/*
@@ -583,6 +585,10 @@ func (s *Server) handler() http.Handler {
 			http.Error(w, "此功能尚未接入 macOS 客机", http.StatusConflict)
 			return
 		}
+		if s.microGuest != nil && microVMUnsupportedRoute(r.Method, r.URL.Path) {
+			http.Error(w, "此功能尚未接入 MicroVM 开发环境", http.StatusConflict)
+			return
+		}
 		if strings.HasPrefix(r.URL.Path, "/api/mobile/") {
 			// Device trust is scoped to this host. Never forward a paired phone
 			// into a different host selected by the desktop SSH client.
@@ -740,10 +746,6 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 		}
 	} else if s.macosGuest != nil {
 		view["guest_system"] = guestos.MacOS
-	} else if system, err := s.installedLinuxSystem(); err != nil {
-		view["guest_system_error"] = err.Error()
-	} else if system != guestos.Debian13 {
-		view["guest_system"] = system
 	}
 	jsonReply(w, view)
 }
@@ -912,30 +914,21 @@ func (s *Server) start(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	if pending != nil && !hostimage.IsLinux(pending.System) {
+	if pending != nil {
+		// The removed Lima Linux runtime can never continue an old record.
+		if hostimage.IsLinux(pending.System) {
+			http.Error(w, errLimaLinuxRemoved.Error(), http.StatusConflict)
+			return
+		}
 		http.Error(w, "已有原生客户机安装，请继续原安装", http.StatusConflict)
 		return
 	}
-	if pending != nil && input.System != "" && pending.System != input.System {
-		http.Error(w, "此环境已绑定所选 Linux 系统，请继续原安装", http.StatusConflict)
+	if !containerenv.Configured(s.profile) {
+		http.Error(w, errLimaLinuxRemoved.Error(), http.StatusConflict)
 		return
 	}
-	if pending != nil {
-		input.System = pending.System
-		s.beginGuestInstall(w, r, input)
-		return
-	}
-	boundSystem, err := s.installedLinuxSystem()
-	if err != nil {
-		requestError(w, err)
-		return
-	}
-	if input.System != "" && input.System != boundSystem {
-		if canInstallCatalogLinux(input.System) {
-			s.beginGuestInstall(w, r, input)
-		} else {
-			http.Error(w, "当前环境无法启动所选客户机系统，请保留原环境并重新检查安装选择", http.StatusConflict)
-		}
+	if input.System != "" && input.System != guestos.Debian13 {
+		http.Error(w, "容器环境不能选择其他客户机系统", http.StatusConflict)
 		return
 	}
 	s.launch(w, "start", func() error {
@@ -956,11 +949,6 @@ func (s *Server) requestStop(w http.ResponseWriter, logout bool) {
 	if err := s.requireStorageReady(); err != nil {
 		http.Error(w, err.Error(), http.StatusConflict)
 		return
-	}
-	for _, name := range []string{cage.InstanceName(s.profile, s.environmentDir()), "base-building"} {
-		if owner := cage.InstanceJobID(filepath.Join(s.profile, "state"), name); owner != "" {
-			_ = cage.RequestJobStop(s.profile, owner)
-		}
 	}
 	jobID := s.jobs.cancelRunning()
 	if jobID != "" {

@@ -3,9 +3,10 @@ package guestos
 import (
 	"context"
 	"errors"
-	"golang.org/x/mod/semver"
 	"os/exec"
 	"strings"
+
+	"golang.org/x/mod/semver"
 )
 
 func probeMacHost(ctx context.Context) (MacRestore, error) {

@@ -8,7 +8,6 @@ import (
 	"runtime"
 	"strings"
 	"syscall"
-	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
@@ -60,21 +59,6 @@ func ConfigureWindowsRuntime() error {
 	if len(paths) > 0 {
 		paths = append(paths, os.Getenv("PATH"))
 		return os.Setenv("PATH", strings.Join(paths, string(os.PathListSeparator)))
-	}
-	return nil
-}
-
-// This capability query does not require elevation and performs no changes.
-// The desktop installer can offer the Windows Features screen separately.
-func windowsHypervisorReady() error {
-	proc := windows.NewLazySystemDLL("WinHvPlatform.dll").NewProc("WHvGetCapability")
-	if err := proc.Find(); err != nil {
-		return fmt.Errorf("请启用 Windows Hypervisor Platform（Windows 虚拟机监控程序平台）并重启后再启动环境")
-	}
-	var present, written uint32
-	result, _, _ := proc.Call(0, uintptr(unsafe.Pointer(&present)), unsafe.Sizeof(present), uintptr(unsafe.Pointer(&written)))
-	if result != 0 || written != 4 || present == 0 {
-		return fmt.Errorf("Windows 虚拟化尚未就绪：请在固件中启用 CPU 虚拟化，启用 Windows Hypervisor Platform 并重启")
 	}
 	return nil
 }

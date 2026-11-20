@@ -49,7 +49,7 @@ func TestIntelMacRunningRequiresQEMUProcess(t *testing.T) {
 }
 
 func TestVMRecordWithReusedPIDIsNotRunning(t *testing.T) {
-	for _, guest := range []string{"linux", "macos"} {
+	for _, guest := range []string{"macos"} {
 		t.Run(guest, func(t *testing.T) {
 			s := testServer(t)
 			s.preferences.Workspace, _ = filepath.EvalSymlinks(t.TempDir())

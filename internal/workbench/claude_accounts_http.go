@@ -177,6 +177,9 @@ func (s *Server) recoverClaudePending(ctx context.Context, id string, force bool
 }
 
 func (s *Server) pollClaudeAccounts(list claudeAccountList) {
+	if s.microGuest != nil {
+		return
+	}
 	s.mu.Lock()
 	ready := s.ready && !s.closing
 	s.mu.Unlock()

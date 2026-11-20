@@ -6,11 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
-	"regexp"
 	"strings"
 
 	"github.com/sylvinus/agent-vm/internal/paths"
@@ -23,9 +19,6 @@ const OldPrefix = "agent-vm-"
 // Template is the base VM every project's VM is cloned from. No project VM
 // has its name: theirs end with a hash.
 const Template = "base"
-
-// The names Scratch makes.
-var scratchRe = regexp.MustCompile(`^[A-Za-z0-9-]+-scratch-[0-9a-f]{8}$`)
 
 // Limit is the instance-name length supported by one Lima home. Zero
 // selects Lima's normal 76-byte cap.
@@ -96,14 +89,6 @@ func (limit Limit) Scratch(dir string) (string, error) {
 	return limit.fit(name, "-scratch-"+hex.EncodeToString(b[:])), nil
 }
 
-// IsScratch reports whether name looks like one Scratch makes. It only
-// looks like it: a project folder named "x-scratch" gets a VM named
-// "x-scratch-<hash>", which matches. Deleting a VM unasked takes more than
-// the name, a marker of a --scratch run (state.ScratchOf).
-func IsScratch(name string) bool {
-	return scratchRe.MatchString(name)
-}
-
 // base is the last element of dir, every run of bytes other than ASCII
 // letters and digits made one "-", cut to max bytes when max > 0, without a
 // "-" at either end. As `basename | tr -cs 'a-zA-Z0-9' '-'` did, the newline
@@ -142,32 +127,4 @@ func basename(p string) string {
 		return "/"
 	}
 	return t[strings.LastIndexByte(t, '/')+1:]
-}
-
-// ErrNoDir is returned by AbsDir for a directory that does not exist.
-var ErrNoDir = errors.New("no such directory")
-
-// AbsDir is dir (the current directory when empty) as the commands that
-// start a VM spell theirs: absolute, logical (symlinks kept, as `pwd` does;
-// os.Getwd returns $PWD when it names the current directory), without "."
-// or "..". It refuses a directory that does not exist, and a path holding a
-// control character, which would forge lines of `info`'s key=value output.
-func AbsDir(dir string) (string, error) {
-	if dir == "" || !filepath.IsAbs(dir) {
-		wd, err := os.Getwd()
-		if err != nil {
-			return "", err
-		}
-		dir = filepath.Join(wd, dir)
-	}
-	dir = filepath.Clean(dir)
-	if st, err := os.Stat(dir); err != nil || !st.IsDir() {
-		return "", fmt.Errorf("%w: %s", ErrNoDir, dir)
-	}
-	for _, r := range dir {
-		if r < 0x20 || r == 0x7f {
-			return "", errors.New("the directory name contains a control character")
-		}
-	}
-	return paths.Host(dir), nil
 }

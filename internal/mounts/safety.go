@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"unicode"
-	"unicode/utf8"
 
 	"github.com/sylvinus/agent-vm/internal/paths"
 )
@@ -203,33 +201,6 @@ func UnsafeProject(dir string, refs []Ref) (string, bool) {
 		return why, true
 	}
 	return GitDirShare(dir)
-}
-
-// Unmountable says why Lima cannot be given dir as a share: with whitespace
-// the mount fails silently, leaving a bare, root-owned mount point; a quote,
-// a backslash or a control character are refused as 0.2 refused them; and
-// what Lima would read as another path (Unwritable).
-func Unmountable(dir string) (string, bool) {
-	if strings.IndexFunc(dir, unicode.IsSpace) >= 0 {
-		return "contains whitespace, which Lima cannot mount", true
-	}
-	if strings.ContainsAny(dir, "\"\\") || strings.IndexFunc(dir, unicode.IsControl) >= 0 {
-		return "contains a quote, a backslash or a control character", true
-	}
-	return Unwritable(dir)
-}
-
-// Unwritable says why s cannot go into Lima's config as written: Lima
-// expands Go templates in share paths ({{.Home}} is the home folder), and a
-// byte that is not UTF-8 becomes U+FFFD on the way.
-func Unwritable(s string) (string, bool) {
-	if strings.Contains(s, "{{") {
-		return "contains {{, which Lima reads as a template", true
-	}
-	if !utf8.ValidString(s) {
-		return "is not valid UTF-8", true
-	}
-	return "", false
 }
 
 func isFile(p string) bool { fi, err := os.Stat(p); return err == nil && fi.Mode().IsRegular() }

@@ -57,11 +57,3 @@ func LoadResourceAllocation(configPath string) (ResourceAllocation, error) {
 	}
 	return a, nil
 }
-
-func ConfiguredResourceLimits(configPath string) (int, int, error) {
-	a, err := LoadResourceAllocation(configPath)
-	if err != nil {
-		return 0, 0, err
-	}
-	return a.Limits()
-}

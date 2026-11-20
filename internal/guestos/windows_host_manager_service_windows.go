@@ -5,6 +5,7 @@ package guestos
 import (
 	"context"
 	"errors"
+
 	"golang.org/x/sys/windows/svc"
 )
 

@@ -1,9 +1,10 @@
 package host
 
 import (
-	"al.essio.dev/pkg/shellescape"
 	"os"
 	"path/filepath"
+
+	"al.essio.dev/pkg/shellescape"
 )
 
 // ConfigureWindowsRuntime retains the existing cross-platform entry point.

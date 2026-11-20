@@ -5,32 +5,32 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"runtime/debug"
 	"strings"
+	"sync"
+	"syscall"
 	"time"
 
 	agentvm "github.com/sylvinus/agent-vm"
 	"github.com/sylvinus/agent-vm/internal/appupdate"
 	"github.com/sylvinus/agent-vm/internal/cage"
-	"github.com/sylvinus/agent-vm/internal/cli"
 	"github.com/sylvinus/agent-vm/internal/containerenv"
 	"github.com/sylvinus/agent-vm/internal/diagnostics"
 	"github.com/sylvinus/agent-vm/internal/guestos"
-	"github.com/sylvinus/agent-vm/internal/guestprofile"
 	"github.com/sylvinus/agent-vm/internal/host"
 	"github.com/sylvinus/agent-vm/internal/hostproxy"
 	"github.com/sylvinus/agent-vm/internal/limaembed"
 	"github.com/sylvinus/agent-vm/internal/managedproxy"
+	"github.com/sylvinus/agent-vm/internal/version"
 	"github.com/sylvinus/agent-vm/internal/workbench"
-	"io"
-	"os/signal"
-	"runtime/debug"
-	"sync"
-	"syscall"
 )
 
 const help = `Claude Cage — local isolated Claude development
@@ -46,17 +46,8 @@ cage guest-os --json  Check host prerequisites for a same-system guest
                      On Windows, add --vm-id GUID to inspect one Hyper-V VM
 cage proxy-start   Start Cage's bundled proxy core with the applied node
 cage proxy-stop    Stop Cage's core and close external networking
-cage setup         Build the isolated base VM through the specified proxy
-cage up            Start the shared Cage environment, editor and browser
-cage login         Start cage services, then Claude's login flow inside the VM
-cage access        Inspect legacy viewer credentials (diagnostics only)
-cage shell         Open a shell in the shared environment
-cage run COMMAND   Execute a command in the shared environment
-cage claude        Run Claude Code in the shared environment
-cage stop          Stop the shared Cage environment and its proxy core
+cage stop          Stop Cage's proxy core (environments are managed in the app)
                    --keep-proxy keeps the core running for an environment restart
-cage list          List this cage profile's VMs
-cage doctor        Diagnose the VM
 cage diagnostics --json PATH.zip   Export a redacted diagnostic bundle
 cage version       Print this build's version. --min VERSION fails if older
 cage licenses      Print third-party license notices
@@ -91,9 +82,6 @@ func run() int {
 	} {
 		os.Unsetenv(name)
 	}
-	// The shared commands otherwise name agent-vm and suggest its installer.
-	cli.Command = "claude-cage"
-	cli.UpdateHint = "update Cage from the app, or with the installer or package that installed it"
 	args := os.Args[1:]
 	if len(args) > 0 && args[0] == "host-download" {
 		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -109,8 +97,16 @@ func run() int {
 	}
 	// These read only this build's own metadata. Answering them before the
 	// profile is opened keeps `cage version --min` usable on a fresh install.
-	if args[0] == "version" || args[0] == "--version" || args[0] == "-V" || args[0] == "licenses" {
-		return cli.Main(args, cli.Stdio())
+	if args[0] == "version" || args[0] == "--version" || args[0] == "-V" {
+		return versionCommand(args[1:])
+	}
+	if args[0] == "licenses" {
+		if len(args) != 1 {
+			fmt.Fprintln(os.Stderr, "Usage: claude-cage licenses")
+			return 2
+		}
+		fmt.Print(agentvm.License, "\n", agentvm.Notice, "\n", agentvm.ThirdPartyLicenses)
+		return 0
 	}
 	if args[0] == "agent" {
 		return runAgent(args[1:], os.Stdin, os.Stdout)
@@ -498,8 +494,7 @@ func run() int {
 		args = append([]string{"stop"}, args[2:]...)
 	}
 	cfg, err := cage.Load(path)
-	management := args[0] == "stop" || args[0] == "list" || args[0] == "info"
-	if err != nil && !management {
+	if err != nil && args[0] != "stop" {
 		return fail(err)
 	}
 
@@ -563,34 +558,24 @@ func run() int {
 		}
 		return 0
 	}
-	// Every Cage operation targets this profile's one persistent environment.
-	switch args[0] {
-	case "up", "login", "shell", "run", "claude", "stop", "doctor", "access", "name":
-		directory := cage.EnvironmentDir(filepath.Dir(path))
-		if err := os.MkdirAll(directory, 0700); err != nil {
-			return fail(err)
+	if args[0] == "stop" {
+		if len(args) != 1 {
+			return fail(fmt.Errorf("stop takes no arguments besides --keep-proxy"))
 		}
-		if err := os.Chdir(directory); err != nil {
-			return fail(err)
-		}
-	}
-	if management {
-		code := cli.Main(args, cli.Stdio())
-		if code == 0 && args[0] == "stop" && !keepProxy {
+		if !keepProxy {
 			if err := managedproxy.Stop(filepath.Dir(path)); err != nil {
 				return fail(err)
 			}
 		}
-		return code
+		return 0
 	}
-	if err := cfg.RequireManagedProxy(filepath.Dir(path)); err != nil {
-		return fail(err)
-	}
-	if err := cfg.CheckRunning(state); err != nil {
-		return fail(err)
-	}
-
 	if args[0] == "check" {
+		if err := cfg.RequireManagedProxy(filepath.Dir(path)); err != nil {
+			return fail(err)
+		}
+		if err := cfg.CheckRunning(state); err != nil {
+			return fail(err)
+		}
 		e, err := cage.NewEgress(cfg)
 		if err != nil {
 			return fail(err)
@@ -608,63 +593,49 @@ func run() int {
 		fmt.Println("Proxy transport OK. Guest traffic still requires VM acceptance checks.")
 		return 0
 	}
-	if args[0] == "setup" {
-		if cfg.GuestProfile == nil {
-			loc, e := cage.GetStorageLocation(filepath.Dir(path))
-			if e != nil {
-				return fail(e)
-			}
-			if !loc.HasEnvironment {
-				cfg.GuestProfile, e = guestprofile.Create(filepath.Dir(path), guestprofile.Options{})
-				if e != nil {
-					return fail(e)
-				}
-			}
-		}
-		if err = os.MkdirAll(state, 0700); err != nil {
-			return fail(err)
-		}
-		if err = os.WriteFile(filepath.Join(state, "setup.sh"), []byte(cfg.SetupScript()), 0600); err != nil {
-			return fail(err)
-		}
-		memory, cpus, resourceErr := cage.ConfiguredResourceLimits(path)
-		if resourceErr != nil {
-			return fail(resourceErr)
-		}
-		args = append([]string{"setup", "--memory", fmt.Sprint(memory), "--cpus", fmt.Sprint(cpus), "--disk", "24", "--preinstall=node,python,chromium,gh,claude,code-server"}, args[1:]...)
+	switch args[0] {
+	case "setup", "up", "login", "access", "shell", "run", "claude", "list", "doctor", "info", "name", "update-tools":
+		return fail(fmt.Errorf("cage %s managed the removed Lima Linux environment; local Linux environments now run as MicroVMs in the Airlock app", args[0]))
 	}
-	if args[0] == "up" || args[0] == "login" {
-		result := cli.Main([]string{"run", "true"}, cli.Stdio())
-		if result != 0 {
-			return result
-		}
-		if err := workbench.StartGuestServices(context.Background(), path, os.Stdout, os.Stderr); err != nil {
-			return fail(err)
-		}
-		fmt.Println("Cage local services are ready. Open Cage or run cage desktop to complete the required network checks. External networking stays closed until the workbench approves this VM; no local access password is required.")
-		if args[0] == "login" {
-			return cli.Main([]string{"run", "--tty", "bash", "-lc", "source /etc/profile.d/claude-cage.sh; exec claude auth login"}, cli.Stdio())
-		}
-		return 0
-	}
-	if args[0] == "update-tools" {
-		if result := cli.Main([]string{"run", "true"}, cli.Stdio()); result != 0 {
-			return result
-		}
-		if err := workbench.RunMaintenanceScript(context.Background(), path, cage.ToolsUpdateScript(), os.Stdout, os.Stderr); err != nil {
-			return fail(err)
-		}
-		return 0
-	}
-	if args[0] == "access" {
-		args = []string{"run", "bash", "-c", `printf 'Editor password: '; sed -n 's/^password: //p' "$HOME/.config/claude-cage/code-server.yaml"; printf 'Browser password: '; cat "$HOME/.config/claude-cage/browser-password"; printf '\n'`}
-	}
-	allowed := map[string]bool{"setup": true, "run": true, "shell": true, "claude": true, "stop": true, "list": true, "doctor": true, "info": true, "name": true}
-	if !allowed[args[0]] {
-		return fail(fmt.Errorf("unknown cage command %q; see cage help", args[0]))
-	}
-	return cli.Main(args, cli.Stdio())
+	return fail(fmt.Errorf("unknown cage command %q; see cage help", args[0]))
 }
+
+// `version [--min X.Y.Z]`: silent and 0 when this build is at least X.Y.Z,
+// an error and 1 when older, 2 when the call itself is wrong.
+func versionCommand(args []string) int {
+	if len(args) == 0 {
+		fmt.Println(version.Version)
+		return 0
+	}
+	want := ""
+	for len(args) > 0 {
+		switch a := args[0]; {
+		case a == "--min":
+			if len(args) < 2 {
+				fmt.Fprintln(os.Stderr, "Error: --min needs a version (e.g. --min 0.2.0)")
+				return 2
+			}
+			want, args = args[1], args[2:]
+		case strings.HasPrefix(a, "--min="):
+			want, args = strings.TrimPrefix(a, "--min="), args[1:]
+		default:
+			fmt.Fprintf(os.Stderr, "Error: unknown option for version: %s\n", a)
+			return 2
+		}
+	}
+	if !versionPattern.MatchString(want) {
+		fmt.Fprintf(os.Stderr, "Error: --min expects a version like 1.2.3 (got: '%s')\n", want)
+		return 2
+	}
+	if version.AtLeast(version.Version, want) {
+		return 0
+	}
+	fmt.Fprintf(os.Stderr, "Error: claude-cage %s is older than the required %s.\n", version.Version, want)
+	fmt.Fprintln(os.Stderr, "  Update it:  update Cage from the app, or with the installer or package that installed it")
+	return 1
+}
+
+var versionPattern = regexp.MustCompile(`^[0-9]+(\.[0-9]+)*(-[A-Za-z0-9.]+)?$`)
 
 func containerInstallScript(kind string) (string, error) {
 	switch kind {
@@ -684,13 +655,6 @@ func containerInstallScript(kind string) (string, error) {
 	default:
 		return "", fmt.Errorf("container-install-script tools|services")
 	}
-}
-
-// Service assets exceed Windows' command-line limit. Give only this internal
-// invocation a script stream; interactive login and ordinary run keep stdin.
-func runGuestServiceStart(script string, stdio cli.IO, invoke func([]string, cli.IO) int) int {
-	stdio.Stdin = strings.NewReader(script)
-	return invoke([]string{"run", "bash", "-s"}, stdio)
 }
 
 func fail(err error) int {

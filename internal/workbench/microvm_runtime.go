@@ -86,7 +86,7 @@ func (s *Server) loadMicroVM() error {
 	// Never reinterpret a profile already bound to a different runtime.
 	for _, name := range []string{"macos-guest.json", "windows-guest.json", "container.json", "state/lima"} {
 		if _, err := os.Stat(filepath.Join(s.profile, name)); err == nil {
-			return errors.New("MicroVM needs a separate development profile; use make dev-microvm")
+			return errors.New("MicroVM needs a separate development profile; use make dev")
 		} else if !os.IsNotExist(err) {
 			return err
 		}

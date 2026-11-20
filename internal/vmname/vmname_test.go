@@ -3,8 +3,6 @@ package vmname
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -84,7 +82,7 @@ func TestNameFits(t *testing.T) {
 	if limit.FromOld(oldName) != n {
 		t.Errorf("FromOld(%q) = %q, Name %q", oldName, limit.FromOld(oldName), n)
 	}
-	if s, _ := limit.Scratch(dir); len(s) > 20 || !IsScratch(s) {
+	if s, _ := limit.Scratch(dir); len(s) > 20 {
 		t.Errorf("Scratch = %q", s)
 	}
 	if Name(dir) != full+hash {
@@ -101,70 +99,6 @@ func TestFromOld(t *testing.T) {
 	} {
 		if got := FromOld(old); got != want {
 			t.Errorf("FromOld(%q) = %q, want %q", old, got, want)
-		}
-	}
-}
-
-func TestScratchBash(t *testing.T) {
-	for _, dir := range dirs {
-		got, err := Scratch(dir)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !IsScratch(got) || len(got) > 76 {
-			t.Errorf("Scratch(%q) = %q", dir, got)
-		}
-		r := bashref.Run(t, "", nil, "_agent_vm_scratch_name", dir)
-		want := FromOld(strings.TrimSuffix(r.Stdout, "\n"))
-		if got[:len(got)-8] != want[:len(want)-8] {
-			t.Errorf("Scratch(%q) = %q, bash %q", dir, got, want)
-		}
-	}
-}
-
-func TestIsScratch(t *testing.T) {
-	for name, want := range map[string]bool{
-		"proj-scratch-0123abcd":   true,
-		"proj-scratch-0123abc":    false,
-		"proj-1234abcd":           false,
-		"base":                    false,
-		"p/x-scratch-0123abcd":    false,
-		"proj-scratch-0123abcd\n": false,
-	} {
-		if IsScratch(name) != want {
-			t.Errorf("IsScratch(%q) != %v", name, want)
-		}
-	}
-}
-
-func TestAbsDir(t *testing.T) {
-	tmp := t.TempDir()
-	// Host-spelled, as AbsDir spells its answers.
-	tmp = paths.Host(tmp)
-	sub := tmp + "/sub"
-	if err := os.Mkdir(sub, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Chdir(tmp)
-	for in, want := range map[string]string{
-		"":          tmp,
-		"sub":       sub,
-		"sub/":      sub,
-		"./sub/../": tmp,
-		sub + "/":   sub,
-	} {
-		got, err := AbsDir(in)
-		if err != nil || got != want {
-			t.Errorf("AbsDir(%q) = %q, %v; want %q", in, got, err, want)
-		}
-	}
-	if _, err := AbsDir(filepath.Join(tmp, "missing")); err == nil {
-		t.Error("a missing directory was accepted")
-	}
-	ctl := filepath.Join(tmp, "a\nb")
-	if err := os.Mkdir(ctl, 0o755); err == nil {
-		if _, err := AbsDir(ctl); err == nil {
-			t.Error("a control character was accepted")
 		}
 	}
 }

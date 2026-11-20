@@ -1,7 +1,6 @@
 package workbench
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"os"
@@ -11,12 +10,11 @@ import (
 	"testing"
 
 	"github.com/sylvinus/agent-vm/internal/cage"
-	"github.com/sylvinus/agent-vm/internal/cli"
 	"github.com/sylvinus/agent-vm/internal/paths"
 	"github.com/sylvinus/agent-vm/internal/vmname"
 )
 
-func TestControllerNamesMatchCLIForIndependentProfiles(t *testing.T) {
+func TestControllerNamesFollowIndependentProfileBudgets(t *testing.T) {
 	base := os.TempDir()
 	if filepath.Separator == '/' {
 		base = "/tmp"
@@ -40,16 +38,10 @@ func TestControllerNamesMatchCLIForIndependentProfiles(t *testing.T) {
 	}
 	a := &Server{profile: filepath.Join(root, "a")}
 	b := &Server{profile: filepath.Join(root, "another-profile")}
-	cliName := func(s *Server) string {
+	// The instance name is the suffix of the SSH target Lima generates.
+	instanceName := func(s *Server) string {
 		t.Helper()
-		t.Setenv(cage.ConfigEnv, filepath.Join(s.profile, "config.json"))
-		t.Setenv("AGENT_VM_STATE_DIR", filepath.Join(s.profile, "state"))
-		t.Setenv("AGENT_VM_LIMA_HOME", filepath.Join(s.profile, "state", "lima"))
-		var out, stderr bytes.Buffer
-		if n := cli.Main([]string{"name", workspace}, cli.IO{Stdout: &out, Stderr: &stderr}); n != 0 {
-			t.Fatalf("CLI name: %s", stderr.String())
-		}
-		return strings.TrimSpace(out.String())
+		return strings.TrimPrefix(s.sshTarget(), "lima-")
 	}
 	for _, s := range []*Server{a, b} {
 		if err = os.Mkdir(s.profile, 0700); err != nil {
@@ -59,11 +51,11 @@ func TestControllerNamesMatchCLIForIndependentProfiles(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	an, bn := cliName(a), cliName(b)
+	an, bn := instanceName(a), instanceName(b)
 	wantA := vmname.HomeLimit(filepath.Join(a.profile, "state", "lima"), false).Name(workspace)
 	wantB := vmname.HomeLimit(filepath.Join(b.profile, "state", "lima"), false).Name(workspace)
 	if an != wantA || bn != wantB {
-		t.Fatalf("CLI names differ from their profile budgets: %q != %q, %q != %q", an, wantA, bn, wantB)
+		t.Fatalf("names differ from their profile budgets: %q != %q, %q != %q", an, wantA, bn, wantB)
 	}
 	// /tmp keeps the POSIX fixture short enough to exercise different socket
 	// budgets. Deep Windows temp paths can legitimately reach the same minimum
@@ -78,7 +70,7 @@ func TestControllerNamesMatchCLIForIndependentProfiles(t *testing.T) {
 			defer wg.Done()
 			for i := 0; i < 20; i++ {
 				if got := s.sshTarget(); got != "lima-"+want {
-					t.Errorf("SSH target %s; CLI name %s", got, want)
+					t.Errorf("SSH target %s; expected name %s", got, want)
 					return
 				}
 				if got, wantDir := s.instanceDir(), filepath.Join(s.profile, "state", "lima", want); !paths.Equal(paths.Host(filepath.Clean(got)), paths.Host(wantDir)) {
@@ -96,7 +88,7 @@ func TestControllerNamesMatchCLIForIndependentProfiles(t *testing.T) {
 	if _, err = cage.MoveStorage(context.Background(), b.profile, filepath.Join(root, strings.Repeat("data-", 10)), loc, nil); err != nil {
 		t.Fatal(err)
 	}
-	if got := cliName(b); got != bn || b.sshTarget() != "lima-"+bn {
+	if got := instanceName(b); got != bn || b.sshTarget() != "lima-"+bn {
 		t.Fatalf("storage migration changed VM name: %s -> %s", bn, got)
 	}
 	// Preserve a stopped VM restored from an earlier, shorter socket path.
@@ -108,7 +100,7 @@ func TestControllerNamesMatchCLIForIndependentProfiles(t *testing.T) {
 	if err = os.WriteFile(filepath.Join(dir, "lima.yaml"), []byte("{}"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if got := cliName(b); got != old || b.sshTarget() != "lima-"+old {
-		t.Fatalf("existing disk %s not reused; CLI picked %s", old, got)
+	if got := instanceName(b); got != old || b.sshTarget() != "lima-"+old {
+		t.Fatalf("existing disk %s not reused; picked %s", old, got)
 	}
 }

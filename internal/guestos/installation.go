@@ -188,25 +188,6 @@ func RecordPreparedMedia(profile string, id uuid.UUID, ready hostimage.Plan) err
 	return publishBinding(profile, "guest-install-media-"+id.String()+".json", data)
 }
 
-func FinishLinuxInstallation(profile string, id uuid.UUID) error {
-	installed, err := LoadInstallation(profile)
-	if err != nil {
-		return err
-	}
-	if installed == nil || installed.ID != id || !hostimage.IsLinux(installed.System) {
-		return errors.New("Linux 安装记录已变化")
-	}
-	// Keep recovery information until the persistent image choice can be read.
-	system, err := hostimage.LinuxSystem(filepath.Join(profile, "state"))
-	if err != nil {
-		return err
-	}
-	if system != installed.System {
-		return errors.New("Linux 安装尚未保存所选系统，保留安装记录以便继续")
-	}
-	return os.Remove(filepath.Join(profile, installRecord))
-}
-
 // UnstartedInstallation reports whether the choice can be changed while
 // retaining every downloaded file and disk. A partial VM counts as started.
 func UnstartedInstallation(profile string, i Installation) (bool, error) {

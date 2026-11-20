@@ -100,8 +100,8 @@ func (s *Server) prepareGuestProfile(options *guestprofile.Options, system strin
 		if err := options.ValidatePlatform(platform); err != nil {
 			return err
 		}
-		if options.GPUBackend == "virgl" && (runtime.GOOS != "linux" || containerenv.Configured(s.profile)) {
-			return errors.New("VirGL 目前仅支持 Linux 主机上的 QEMU 客机")
+		if options.GPUBackend == "virgl" {
+			return errors.New("VirGL 仅用于已移除的 Lima Linux 客机")
 		}
 	}
 	p, err := guestprofile.Load(s.profile)
@@ -130,11 +130,6 @@ func (s *Server) prepareGuestProfile(options *guestprofile.Options, system strin
 	o := guestprofile.Options{}
 	if options != nil {
 		o = *options
-		if o.GPUBackend == "virgl" {
-			if err := checkVirGLHost(); err != nil {
-				return err
-			}
-		}
 	}
 	_, err = guestprofile.Create(s.profile, o)
 	return err

@@ -3,12 +3,13 @@ package cage
 import (
 	"context"
 	"encoding/json"
-	"github.com/sylvinus/agent-vm/internal/guestprofile"
-	"github.com/sylvinus/agent-vm/internal/managedproxy"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/sylvinus/agent-vm/internal/guestprofile"
+	"github.com/sylvinus/agent-vm/internal/managedproxy"
 )
 
 func TestProxyRevisionRevokesOldReportAtSameEndpoint(t *testing.T) {

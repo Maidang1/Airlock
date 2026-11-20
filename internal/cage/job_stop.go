@@ -1,7 +1,6 @@
 package cage
 
 import (
-	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -33,21 +32,6 @@ func RequestJobStop(profile, id string) error {
 		return err
 	}
 	return f.Close()
-}
-
-func InstanceJobID(state, name string) string {
-	if filepath.Base(name) != name {
-		return ""
-	}
-	data, err := os.ReadFile(filepath.Join(state, "lima", name, "cage-running.json"))
-	if err != nil || len(data) > 4096 {
-		return ""
-	}
-	var record runningProfile
-	if json.Unmarshal(data, &record) != nil || !jobIDPattern.MatchString(record.JobID) {
-		return ""
-	}
-	return record.JobID
 }
 
 // WatchJobStop is installed before starting the VM driver. onStop signals

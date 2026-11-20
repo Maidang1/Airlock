@@ -191,7 +191,13 @@ func (s *Server) claudePanelView(ctx context.Context) (claudePanel, claudeAccoun
 	}
 	var reading claudeGuestSnapshot
 	var checked time.Time
-	if update {
+	if s.microGuest != nil {
+		// The MicroVM image carries no cage-claude-account helper, so managed
+		// account discovery can never succeed there. Report the limitation
+		// instead of probing a guest that cannot answer.
+		view.DetectionStatus = "unsupported"
+		view.DetectionError = "MicroVM 开发环境暂不支持托管账号调度，请在终端内直接登录 Claude"
+	} else if update {
 		view.DetectionStatus = "update_required"
 		view.DetectionError = "请同步环境组件后再检测普通终端的登录"
 	} else if ready {
@@ -212,7 +218,7 @@ func (s *Server) claudePanelView(ctx context.Context) (claudePanel, claudeAccoun
 	if err != nil {
 		return view, list, err
 	}
-	if ready && !update && list.PendingLogin != "" && !s.claudeLoginActive(list.PendingLogin) {
+	if ready && !update && s.microGuest == nil && list.PendingLogin != "" && !s.claudeLoginActive(list.PendingLogin) {
 		_ = s.recoverClaudePending(ctx, list.PendingLogin, false)
 	}
 	m.mu.Lock()

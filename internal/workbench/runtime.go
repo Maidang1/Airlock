@@ -2,7 +2,6 @@ package workbench
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -17,14 +16,16 @@ import (
 	"github.com/sylvinus/agent-vm/internal/cage"
 	"github.com/sylvinus/agent-vm/internal/containerenv"
 	"github.com/sylvinus/agent-vm/internal/diagnostics"
-	"github.com/sylvinus/agent-vm/internal/guestos"
 	"github.com/sylvinus/agent-vm/internal/host"
-	"github.com/sylvinus/agent-vm/internal/hostimage"
 	"github.com/sylvinus/agent-vm/internal/managedproxy"
 )
 
 var loadConfig = cage.Load
 var defaultConfig = cage.DefaultConfig
+
+// errLimaLinuxRemoved rejects profiles that would fall through to the removed
+// Lima Linux guest: local Linux environments run as MicroVMs.
+var errLimaLinuxRemoved = errors.New("本地 Linux 环境已改为 MicroVM，旧的 Lima Linux 环境不再受支持；请使用 MicroVM 镜像创建新环境")
 
 type guestCredentials struct {
 	Token        string  `json:"token"`
@@ -68,8 +69,7 @@ func (s *Server) environmentPrepared() bool {
 		state, err := environment.State(ctx)
 		return err == nil && state.Exists
 	}
-	_, err := os.Stat(filepath.Join(s.profile, "state", ".agent-vm-base-version"))
-	return err == nil
+	return false
 }
 func (s *Server) sshCommand(ctx context.Context, args ...string) *exec.Cmd {
 	return s.sshCommandOptions(ctx, false, args...)
@@ -157,12 +157,12 @@ func (s *Server) attach() error {
 	if s.macosGuest != nil {
 		return s.attachMacOSGuest()
 	}
-	if err := s.requireCurrentLinuxTransferMount(); err != nil {
-		return err
+	if !containerenv.Configured(s.profile) {
+		return errLimaLinuxRemoved
 	}
 	ctx, cancel := s.controlContext()
 	defer cancel()
-	if containerenv.Configured(s.profile) {
+	{
 		environment, err := containerenv.Load(s.profile)
 		if err != nil {
 			return err
@@ -188,8 +188,6 @@ func (s *Server) attach() error {
 			}
 			return errors.New("容器网络与文件连接尚未就绪，请重试启动")
 		}
-	} else if !s.vmRunning() {
-		return errors.New("环境尚未启动")
 	}
 	b, err := s.guest(ctx, guestConnectionSnapshot)
 	if err != nil {
@@ -220,10 +218,8 @@ func (s *Server) attach() error {
 	if err = s.setBrowserHome(ctx, credentials.Token, home); err != nil {
 		return err
 	}
-	if containerenv.Configured(s.profile) {
-		if err := s.recoverClientMounts(ctx); err != nil {
-			return err
-		}
+	if err := s.recoverClientMounts(ctx); err != nil {
+		return err
 	}
 	s.mu.Lock()
 	s.credentials = credentials
@@ -283,11 +279,6 @@ func (s *Server) monitor(ctx context.Context) {
 }
 
 func (s *Server) runCage(args ...string) error {
-	if len(args) > 0 && args[0] == "up" {
-		if err := s.requireCurrentLinuxTransferMount(); err != nil {
-			return err
-		}
-	}
 	ctx := s.operationContext()
 	// Setup and startup can both install dependencies. Downloads own their
 	// inactivity timeouts; the operation context still permits an explicit stop.
@@ -317,7 +308,7 @@ func (s *Server) runCage(args ...string) error {
 		if errors.Is(ctx.Err(), context.Canceled) {
 			return context.Canceled
 		}
-		action := map[string]string{"setup": "准备 Linux 环境", "up": "启动环境", "down": "停止环境", "stop": "停止环境"}[args[0]]
+		action := map[string]string{"setup": "准备容器环境", "up": "启动环境", "down": "停止环境", "stop": "停止环境"}[args[0]]
 		if action == "" {
 			action = "执行环境操作"
 		}
@@ -358,27 +349,13 @@ func (s *Server) startEnvironment(syncTimezone bool) error {
 	if s.windowsGuest != nil {
 		return s.startWindowsGuest()
 	}
-	if err := s.requireCurrentLinuxTransferMount(); err != nil {
-		return err
-	}
-	pending, err := guestos.LoadInstallation(s.profile)
-	if err != nil || (pending != nil && !hostimage.IsLinux(pending.System)) {
-		return errors.New("请从首次安装入口继续原生客户机安装")
-	}
-	linuxSystem, err := s.installedLinuxSystem()
-	if err != nil {
-		return err
-	}
-	if pending != nil {
-		prepared, err := hostimage.Load(filepath.Join(s.profile, "state", "guest-media"))
-		if err != nil || pending.Media == "" || prepared != pending.Source {
-			return errors.New("请从首次安装入口完成本机系统材料准备")
-		}
+	if !containerenv.Configured(s.profile) {
+		return errLimaLinuxRemoved
 	}
 	if _, err := validateWorkspace(s.environmentDir(), s.profile); err != nil {
 		return err
 	}
-	if containerenv.Configured(s.profile) {
+	{
 		environment, err := containerenv.Load(s.profile)
 		if err != nil {
 			return err
@@ -496,16 +473,6 @@ func (s *Server) startEnvironment(syncTimezone bool) error {
 	} else if probeErr != nil {
 		s.setMessage("代理出口无法通过检查，正在启动离线环境…")
 	}
-	if _, err = os.Stat(filepath.Join(s.profile, "state", ".agent-vm-base-version")); !containerenv.Configured(s.profile) && os.IsNotExist(err) {
-		s.setMessage("首次准备 Linux 环境与开发工具，可能需要数分钟…")
-		job := s.jobs.execution()
-		job.setSetupProgress(&SetupProgress{Phase: "image", System: linuxSystem, Label: "正在准备 " + guestProgressName(linuxSystem) + " 镜像"})
-		if err = s.runCage("setup"); err != nil {
-			return err
-		}
-		job.setSetupProgress(&SetupProgress{Phase: "services", Label: "正在启动浏览器和编辑器"})
-		defer job.setSetupProgress(nil)
-	}
 	s.setMessage("正在启动浏览器、编辑器与共享文件…")
 	if err = s.runCage("up"); err != nil {
 		return err
@@ -540,11 +507,6 @@ func (s *Server) stopEnvironment() (returned error) {
 		return s.stopMacOSGuest()
 	}
 	s.setMessage("正在停止 Cage 环境…")
-	if (explicitStop || s.jobs.snapshot().Kind == "storage") && cage.InstanceJobID(filepath.Join(s.profile, "state"), "base-building") != "" {
-		if err := s.runCage("stop", "--keep-proxy", "base-building"); err != nil {
-			return err
-		}
-	}
 	if client, err := s.gateClient(); err == nil {
 		if state, e := client.Close(context.Background(), "环境正在停止"); e == nil {
 			s.publishGate(state)
@@ -562,7 +524,7 @@ func (s *Server) stopEnvironment() (returned error) {
 	s.terminals.closeAll()
 	s.mobileCLI.stopAll()
 	s.closeProjectShares()
-	if _, err := os.Stat(filepath.Join(s.instanceDir(), "lima.yaml")); !containerenv.Configured(s.profile) && os.IsNotExist(err) {
+	if !containerenv.Configured(s.profile) {
 		return nil
 	}
 	// Internal restarts keep the already validated core alive. Explicit stop
@@ -586,7 +548,7 @@ func (s *Server) apply(v savedProfile, validate bool) error {
 	if execution := s.jobs.execution(); execution.id != "" {
 		resumeVersion = execution.pauseVersion
 	}
-	wasReady := vmAlive(s.profile, s.environmentDir())
+	wasReady := vmAlive(s.profile)
 	if s.microGuest != nil {
 		wasReady = s.microGuest.running()
 	}
@@ -735,33 +697,22 @@ func (s *Server) monitorNetwork(ctx context.Context) {
 	}
 }
 
-func vmAlive(profile, workspace string) bool {
-	if containerenv.Configured(profile) {
-		environment, err := containerenv.Load(profile)
-		if err != nil {
-			return false
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer cancel()
-		state, err := environment.State(ctx)
-		return err == nil && state.Running
-	}
-	if workspace == "" {
+// vmAlive reports whether the profile's Linux guest runs outside the
+// MicroVM, macOS and Windows runtimes: only a container environment now.
+var vmAlive = func(profile string) bool {
+	if !containerenv.Configured(profile) {
 		return false
 	}
-	b, e := os.ReadFile(filepath.Join(profile, "state", "lima", cage.InstanceName(profile, workspace), "cage-running.json"))
-	if e != nil {
+	environment, err := containerenv.Load(profile)
+	if err != nil {
 		return false
 	}
-	var record struct {
-		PID     int    `json:"pid"`
-		Started string `json:"started"`
-	}
-	if json.Unmarshal(b, &record) != nil || record.PID < 1 {
-		return false
-	}
-	return processExists(record.PID) && cage.ProcessStartMatches(record.PID, record.Started)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	state, err := environment.State(ctx)
+	return err == nil && state.Running
 }
+
 func (s *Server) vmRunning() bool {
 	if s.microGuest != nil {
 		return s.microGuest.running()
@@ -774,5 +725,5 @@ func (s *Server) vmRunning() bool {
 	if s.macosGuest != nil {
 		return macOSInstanceRunning(s.instanceDir(), s.macosGuest.Backend)
 	}
-	return vmAlive(s.profile, s.environmentDir())
+	return vmAlive(s.profile)
 }

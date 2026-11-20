@@ -20,18 +20,15 @@ TAGS := yq_noxml,yq_nolua,yq_noini,yq_nohcl,yq_notoml,yq_noprops,yq_nocsv,yq_nou
 CGO_ENABLED ?= 1
 GO_BUILD := CGO_ENABLED=$(CGO_ENABLED) $(GO) build -trimpath -tags $(TAGS) -ldflags "$(LDFLAGS)"
 
-.PHONY: dev-microvm all assets tailnet-assets web-surface cage cage-update-installer prepare-resources prepare-resources-fast dev build-app dmg build-client test test-go airlock-init airlock-microvm microvm-image test-microvm clean
+.PHONY: dev-microvm all assets tailnet-assets web-surface cage cage-bin cage-update-installer prepare-resources prepare-resources-fast dev build-app dmg build-client test test-go airlock-init airlock-microvm microvm-image test-microvm clean
 
 all: build-app
 
 web-surface:
 	node scripts/build-web-surface.mjs
 
+# Lima runs only the macOS guest: its guest agent and Lima's templates.
 assets:
-	CGO_ENABLED=0 GOOS=linux GOARCH=$(GOARCH) $(GO) build -trimpath \
-		-ldflags "-s -w -X github.com/lima-vm/lima/v2/pkg/version.Version=$(LIMA_VERSION)" \
-		-o $(ASSETS)/lima-guestagent.Linux-$(GUEST_ARCH) github.com/lima-vm/lima/v2/cmd/lima-guestagent
-	gzip -9 -n -f $(ASSETS)/lima-guestagent.Linux-$(GUEST_ARCH)
 	mkdir -p $(ASSETS)/Darwin
 	CGO_ENABLED=0 GOOS=darwin GOARCH=$(GOARCH) $(GO) build -trimpath -tags $(TAGS) \
 		-ldflags "-s -w -X github.com/lima-vm/lima/v2/pkg/version.Version=$(LIMA_VERSION)" \
@@ -46,6 +43,10 @@ tailnet-assets:
 	gzip -n -c _output/tailnet/cage-tailnet-linux-arm64 > internal/tailnetassets/assets/cage-tailnet-linux-arm64.gz
 
 cage: web-surface assets tailnet-assets
+	$(MAKE) cage-bin
+
+# Helper binary only; assumes embedded assets are already built (see scripts/dev.sh).
+cage-bin:
 	$(GO_BUILD) -o _output/bin/cage ./cmd/cage
 	codesign -f --entitlements third_party/lima/vz.entitlements -s - _output/bin/cage
 
@@ -59,11 +60,11 @@ prepare-resources:
 prepare-resources-fast:
 	bash scripts/prepare-resources.sh --fast
 
-dev-microvm:
-	bash scripts/dev-microvm.sh
+# Desktop development on the local MicroVM image (make microvm-image first).
+dev:
+	bash scripts/dev.sh
 
-dev: prepare-resources-fast
-	CGO_ENABLED=1 $(GO) tool mygo dev
+dev-microvm: dev
 
 build-app:
 	bash scripts/build-macos.sh

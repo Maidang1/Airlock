@@ -18,7 +18,11 @@ func TestResourceAllocationSaveAndStartup(t *testing.T) {
 	s := testServer(t)
 	check := func(memory, cpus int) {
 		t.Helper()
-		m, c, err := cage.ConfiguredResourceLimits(s.configPath)
+		a, err := cage.LoadResourceAllocation(s.configPath)
+		if err != nil {
+			t.Fatalf("startup limits: %v", err)
+		}
+		m, c, err := a.Limits()
 		if err != nil || m != memory || c != cpus {
 			t.Fatalf("startup limits = %d/%d, %v", m, c, err)
 		}

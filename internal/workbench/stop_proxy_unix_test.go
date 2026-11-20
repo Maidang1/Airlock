@@ -9,7 +9,11 @@ import (
 )
 
 func TestInternalEnvironmentStopKeepsProxy(t *testing.T) {
-	s := transferMountServer(t, false, "current")
+	s := testServer(t)
+	// Only container profiles still stop through the cage command.
+	if err := os.WriteFile(filepath.Join(s.profile, "container.json"), []byte("{}"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	bin := t.TempDir()
 	args := filepath.Join(bin, "stop-args")
 	t.Setenv("CAGE_TEST_STOP_ARGS", args)

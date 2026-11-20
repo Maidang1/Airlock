@@ -1,7 +1,6 @@
 package workbench
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -31,7 +30,6 @@ type guestInstallRequest struct {
 }
 
 type guestInstallView struct {
-	LinuxSystems  []string              `json:"linux_systems,omitempty"`
 	HostMatchOnly bool                  `json:"host_match_only,omitempty"`
 	Reselect      bool                  `json:"reselect,omitempty"`
 	System        string                `json:"system,omitempty"`
@@ -63,20 +61,12 @@ func (s *Server) guestInstallView() (guestInstallView, error) {
 	if !v.Fresh && pending == nil {
 		return v, nil
 	}
-	v.LinuxSystems = linuxGuestSystems(runtime.GOOS, runtime.GOARCH)
 	switch {
 	case runtime.GOOS == "darwin" && (runtime.GOARCH == "arm64" || runtime.GOARCH == "amd64"):
 		v.System = guestos.MacOS
 		v.HostMatchOnly = runtime.GOARCH == "amd64"
 	case runtime.GOOS == "windows" && runtime.GOARCH == "amd64":
 		v.System = guestos.Windows11
-	case runtime.GOOS == "linux" && runtime.GOARCH == "amd64":
-		identity, hostErr := hostimage.Host(context.Background())
-		if hostErr != nil {
-			v.Reason = hostErr.Error()
-		} else {
-			v.System = identity.System
-		}
 	default:
 		return v, nil
 	}
@@ -85,12 +75,11 @@ func (s *Server) guestInstallView() (guestInstallView, error) {
 		if err != nil {
 			return v, err
 		}
-		catalog := pending.SourceKind == guestos.LinuxImageSource && canInstallCatalogLinux(pending.System) && pending.Source.Host.Arch == runtime.GOARCH
-		if !catalog && pending.System != v.System {
-			return v, errors.New("客户机安装记录与这台宿主不匹配")
+		if hostimage.IsLinux(pending.System) {
+			return v, errLimaLinuxRemoved
 		}
-		if pending.SourceKind == guestos.LinuxImageSource && !catalog {
-			return v, errors.New("客户机镜像架构与这台主机不匹配，请恢复原主机环境")
+		if pending.System != v.System {
+			return v, errors.New("客户机安装记录与这台宿主不匹配")
 		}
 		mac, err := guestos.LoadMacOSProfile(s.profile)
 		if err != nil {
@@ -112,7 +101,7 @@ func (s *Server) guestInstallView() (guestInstallView, error) {
 	if v.System == "" {
 		return v, nil
 	}
-	if !hostimage.IsLinux(v.System) && !guestos.HasNativeWorkbenchKit(s.exe, v.System) {
+	if !guestos.HasNativeWorkbenchKit(s.exe, v.System) {
 		v.Reason = "此构建缺少原生客户机安装组件"
 		return v, nil
 	}
@@ -239,11 +228,7 @@ func (s *Server) beginGuestInstallMode(w http.ResponseWriter, r *http.Request, i
 		requestError(w, err)
 		return
 	}
-	catalog := canInstallCatalogLinux(in.System) && in.CloneKey == ""
-	if v.Pending != nil {
-		catalog = v.Pending.SourceKind == guestos.LinuxImageSource
-	}
-	if (!catalog && (!v.Available || v.System != in.System)) || !s.hasTrustedView(r) || (!v.Fresh && v.Pending == nil) || v.Activate {
+	if !v.Available || v.System != in.System || !s.hasTrustedView(r) || (!v.Fresh && v.Pending == nil) || v.Activate {
 		http.Error(w, "当前环境无法安装所选客户机系统", http.StatusConflict)
 		return
 	}
@@ -269,17 +254,6 @@ func (s *Server) beginGuestInstallMode(w http.ResponseWriter, r *http.Request, i
 			return
 		}
 		install.Source = plan
-	} else if catalog {
-		if in.Media != "" || in.SHA256 != "" || in.EditorTerms {
-			requestError(w, errors.New("Ubuntu 使用 Cage 校验过的官方镜像，无需另选安装介质"))
-			return
-		}
-		plan, err := linuxGuestImagePlan(r.Context(), s.profile, in.System, runtime.GOARCH)
-		if err != nil {
-			requestError(w, err)
-			return
-		}
-		install.Source, install.SourceKind = plan, guestos.LinuxImageSource
 	}
 	if err := install.Validate(); err != nil {
 		requestError(w, err)
@@ -383,15 +357,6 @@ func (s *Server) beginGuestInstallMode(w http.ResponseWriter, r *http.Request, i
 		}
 		if err := s.prepareEnvironment(); err != nil {
 			return err
-		}
-		if hostimage.IsLinux(install.System) {
-			if err := hostimage.WriteLinuxTemplate(filepath.Join(s.profile, "state"), install.Source); err != nil {
-				return err
-			}
-			if err := s.startEnvironment(true); err != nil {
-				return err
-			}
-			return guestos.FinishLinuxInstallation(s.profile, install.ID)
 		}
 		s.setMessage("正在安装所选客户机系统…")
 		s.jobs.execution().setSetupProgress(&SetupProgress{Phase: "packages", System: install.System, Label: "正在安装 " + guestProgressName(install.System) + " 系统"})

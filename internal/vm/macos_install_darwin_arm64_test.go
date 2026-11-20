@@ -18,7 +18,7 @@ import (
 	"github.com/opencontainers/go-digest"
 )
 
-func TestMacOSInstallSourceAndMounts(t *testing.T) {
+func TestMacOSInstallSource(t *testing.T) {
 	l := &Lima{}
 	dir := t.TempDir()
 	t.Setenv("LIMA_HOME", filepath.Join(dir, "instances"))
@@ -26,13 +26,11 @@ func TestMacOSInstallSourceAndMounts(t *testing.T) {
 	if err := os.WriteFile(ipsw, []byte("not a restore image"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	shares := []Mount{{Location: dir}}
 	for _, tc := range []struct {
 		file string
 		s    Settings
 		want string
 	}{
-		{ipsw, Settings{Mounts: &shares}, "shared host directories"},
 		{"https://localhost/mac.ipsw", Settings{}, "absolute path"},
 		{ipsw, Settings{}, "Apple Virtualization"},
 	} {

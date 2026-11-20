@@ -100,16 +100,3 @@ func FreeGiB(dir string) (int, bool) {
 		dir = parent
 	}
 }
-
-// WarnDiskSpace warns when the file system of dir has less free space than
-// a disk of want GiB. Disks are sparse, allocated as they fill: a warning,
-// not an error.
-func WarnDiskSpace(dir string, want int, warn io.Writer) {
-	if want == 0 {
-		return
-	}
-	free, ok := FreeGiB(dir)
-	if ok && free < want {
-		fmt.Fprintf(warn, "Warning: ~%d GiB free for a %d GiB VM disk (sparse: allocated as used).\n", free, want)
-	}
-}

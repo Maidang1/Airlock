@@ -12,7 +12,7 @@ var limaID = regexp.MustCompile(`^[A-Za-z0-9]+([._-][A-Za-z0-9]+)*$`)
 
 // Any folder: a name Lima takes (Name's length aside: a long one is refused
 // with the advice to rename the folder), never the base template's, and a
-// scratch name that IsScratch knows and Name never gives.
+// valid scratch name.
 func FuzzName(f *testing.F) {
 	for _, s := range []string{"/home/u/proj", "/", "/home/u/__", "/home/u/-x-", "/home/u/café", "/home/u/base", "/home/u/x-scratch", "/a\nb", "/home/u/" + strings.Repeat("y", 90)} {
 		f.Add(s)
@@ -22,14 +22,11 @@ func FuzzName(f *testing.F) {
 		if !limaID.MatchString(n) || n == Template {
 			t.Fatalf("Name(%q) = %q", dir, n)
 		}
-		if IsScratch(n) && !strings.HasSuffix(strings.TrimSuffix(dir, "/"), "-scratch") && !strings.HasSuffix(strings.TrimSuffix(dir, "/"), "scratch") {
-			t.Fatalf("Name(%q) = %q looks like a scratch VM", dir, n)
-		}
 		s, err := Scratch(dir)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !limaID.MatchString(s) || len(s) > 76 || !IsScratch(s) {
+		if !limaID.MatchString(s) || len(s) > 76 {
 			t.Fatalf("Scratch(%q) = %q", dir, s)
 		}
 	})

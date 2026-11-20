@@ -34,11 +34,3 @@ func (requirements macOSResourceRequirements) Limits(allocation cage.ResourceAll
 func readMacOSResourceRequirements(string) (macOSResourceRequirements, error) {
 	return macOSResourceRequirements{}, errors.New("轻量远程客户端不包含本机虚拟机运行时")
 }
-
-func checkVirGLHost() error {
-	return errors.New("轻量远程客户端不包含本机虚拟机运行时")
-}
-
-func readLimaImageTemplate(string) ([]byte, error) {
-	return nil, errors.New("轻量远程客户端不包含本机虚拟机镜像模板")
-}

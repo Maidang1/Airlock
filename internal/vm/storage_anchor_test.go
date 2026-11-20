@@ -9,6 +9,7 @@ import (
 
 	"github.com/lima-vm/lima/v2/pkg/limatype/dirnames"
 	"github.com/sylvinus/agent-vm/internal/cage"
+	"github.com/sylvinus/agent-vm/internal/vmname"
 )
 
 func TestStorageMoveKeepsLimaIdentityAndSocketPaths(t *testing.T) {
@@ -27,7 +28,11 @@ func TestStorageMoveKeepsLimaIdentityAndSocketPaths(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	limit := MaxName(home)
+	// The name budget follows the logical Lima home once storage moves.
+	maxName := func() vmname.Limit {
+		return vmname.HomeLimit(home, os.Getenv("CAGE_LOGICAL_LIMA_HOME") == home)
+	}
+	limit := maxName()
 	expected, err := cage.GetStorageLocation(profile)
 	if err != nil {
 		t.Fatal(err)
@@ -41,7 +46,7 @@ func TestStorageMoveKeepsLimaIdentityAndSocketPaths(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if after != before || MaxName(home) != limit {
-		t.Fatalf("migration changed the instance path/name limit: before %s/%d, after %s/%d", before, limit, after, MaxName(home))
+	if after != before || maxName() != limit {
+		t.Fatalf("migration changed the instance path/name limit: before %s/%d, after %s/%d", before, limit, after, maxName())
 	}
 }
