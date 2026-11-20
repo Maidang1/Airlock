@@ -10,7 +10,7 @@ Airlock 为 macOS 提供安全、可控的隔离环境工作台（基于 [MyGo](
   - [`internal/mygoclient/surfaces/`](internal/mygoclient/surfaces/terminal_surface.go)：
     - Ghostty `libghostty-vt` 原生终端（支持 Claude OAuth 授权链接捕获与拖拽上传）；
     - macOS 客机原生窗口画布（`ui.Image` + pointer/scroll/keyboard + `ui.TextInputClient` 中文输入法合成）；
-    - Linux 客机 / Cloud SSH 隔离浏览器的轻量 noVNC WebView 画布（`web-surface/`）。
+    - Linux MicroVM / Cloud SSH 隔离浏览器的轻量 noVNC WebView 画布（`web-surface/`）。
   - [`internal/mygoclient/views/`](internal/mygoclient/views/workbench_view.go)：原生工作台、账户锁定/创建/Touch ID、初始化向导、代理（Mihomo 订阅/链式路由/测速/连接审计）、安全门控、Claude 多账号额度调度、Tailscale、Cloud SSH 远程主机、密码保险箱/扩展/下载及手机配对二维码管理。
   - [`internal/macnative/`](internal/macnative/profile.go) & [`cmd/cage-update-installer/`](cmd/cage-update-installer/main.go)：macOS Keychain 快捷解锁（Touch ID / 记住登录 / 试用客机密码）、`NSPasteboard` 剪贴板读写与文件缓存清理、`codesign` 校验及原子 `.app` 更新安装器。
 - **隔离后端与客机能力（复用完整 macOS / Linux / Cloud 后端）**：
